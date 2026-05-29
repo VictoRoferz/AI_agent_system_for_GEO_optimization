@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+}
+
+/* Consulting "slide" card */
+.card {
+  @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+}
+
+.section-title {
+  @apply text-xs font-semibold uppercase tracking-wider text-slate-400;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { @apply bg-white; }
+  .card { @apply shadow-none border-slate-300; break-inside: avoid; }
+}
