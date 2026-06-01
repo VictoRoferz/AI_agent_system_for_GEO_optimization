@@ -5,11 +5,72 @@ import {
   engineLabel,
   PRIORITY_COLOR,
   type AnalysisResult,
+  type ConcreteChange,
   type EngineReadiness,
   type Recommendation,
 } from "@/lib/api";
+import CopyButton from "./CopyButton";
 import PriorityMatrix from "./PriorityMatrix";
 import ScoreGauge from "./ScoreGauge";
+
+export function ChangeView({ change }: { change: ConcreteChange }) {
+  if (change.change_type === "technical") {
+    const code = change.code_snippet || "";
+    return (
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="section-title">Apply this — {change.target}</span>
+          <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[10px] uppercase text-navy-700">
+            {change.code_language || "code"}
+          </span>
+        </div>
+        {code && (
+          <div className="relative mt-2">
+            <pre className="overflow-x-auto rounded-md bg-navy-900 p-3 text-xs leading-relaxed text-slate-100">
+              <code>{code}</code>
+            </pre>
+            <div className="absolute right-2 top-2">
+              <CopyButton text={code} className="border-slate-600 bg-navy-800 text-slate-200" />
+            </div>
+          </div>
+        )}
+        {change.instructions.length > 0 && (
+          <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs text-slate-600">
+            {change.instructions.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+        )}
+      </div>
+    );
+  }
+  // content rewrite — before → after
+  const proposed = change.proposed_text || "";
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 p-3">
+      <div className="section-title">Suggested rewrite — {change.target}</div>
+      {change.original_text ? (
+        <div className="mt-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Before</div>
+          <p className="mt-0.5 rounded-md bg-slate-50 p-2 text-sm text-slate-500 line-through decoration-slate-300">
+            {change.original_text}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs italic text-slate-400">New content (no existing version).</p>
+      )}
+      <div className="mt-2">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-accent-dark">After</div>
+          {proposed && <CopyButton text={proposed} />}
+        </div>
+        <p className="mt-0.5 rounded-md border-l-2 border-accent bg-accent/5 p-2 text-sm text-navy-900">
+          {proposed}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function EngineCard({ er }: { er: EngineReadiness }) {
   return (
@@ -71,6 +132,8 @@ function ActionCard({ rec }: { rec: Recommendation }) {
             <span>Confidence: <b>{rec.confidence}/5</b></span>
           </div>
 
+          {rec.change && <ChangeView change={rec.change} />}
+
           {rec.evidence.length > 0 && (
             <details className="mt-2 text-xs text-slate-500">
               <summary className="cursor-pointer">Evidence</summary>
@@ -105,7 +168,13 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
             ))}
           </div>
         </div>
-        <div className="no-print flex gap-2">
+        <div className="no-print flex flex-wrap gap-2">
+          <a
+            href={`/results/${runId}/studio`}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
+          >
+            ✨ Open AI Studio
+          </a>
           <a
             href={`${API_BASE}/api/runs/${runId}/export?format=md`}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:border-slate-400"

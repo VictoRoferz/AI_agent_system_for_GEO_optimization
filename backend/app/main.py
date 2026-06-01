@@ -33,10 +33,11 @@ def create_app() -> FastAPI:
     app.include_router(meta.router)
 
     # Routers added incrementally as features land:
-    from app.api import analyze, runs
+    from app.api import analyze, runs, studio
 
     app.include_router(analyze.router)
     app.include_router(runs.router)
+    app.include_router(studio.router)
     return app
 
 

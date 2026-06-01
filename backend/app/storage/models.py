@@ -32,3 +32,15 @@ class ContentCache(SQLModel, table=True):
     cache_key: str = Field(primary_key=True)  # sha256 of the URL
     created_at: datetime = Field(default_factory=_utcnow)
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+
+class StudioState(SQLModel, table=True):
+    """Per-run AI Studio state: the generated rewrite, chat history and any
+    extra recommendations the chat agent proposed. A separate table so it is
+    created by `create_all` without altering the existing Run table."""
+    run_id: str = Field(primary_key=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    rewrite: dict | None = Field(default=None, sa_column=Column(JSON))
+    chat_history: list = Field(default_factory=list, sa_column=Column(JSON))  # [{role, content}]
+    extra_recommendations: list = Field(default_factory=list, sa_column=Column(JSON))

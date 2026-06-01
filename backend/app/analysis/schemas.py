@@ -44,6 +44,11 @@ class SignalStatus(str, Enum):
     PREDICTED = "predicted"   # estimated by the brain
 
 
+class ChangeType(str, Enum):
+    CONTENT = "content"       # rewrite of reader-facing copy (title, heading, paragraph)
+    TECHNICAL = "technical"   # exact code change (JSON-LD, meta tag, markup)
+
+
 # ------------------------------------------------------------------------- request
 class AnalysisRequest(BaseModel):
     url: str
@@ -86,6 +91,24 @@ class GoalsDocument(BaseModel):
 
 
 # -------------------------------------------------------- LLM structured-output models
+class ConcreteChange(BaseModel):
+    """The actual, usable artifact that makes a recommendation actionable.
+
+    For a CONTENT change the brain supplies the real rewrite (original -> proposed);
+    for a TECHNICAL change it supplies the exact code to paste plus step-by-step
+    instructions on where/how to apply it.
+    """
+    change_type: ChangeType
+    target: str  # where on the page, e.g. "Title tag", "Intro paragraph", "<head>"
+    # CONTENT
+    original_text: str | None = None  # quoted from the page ("" / None if net-new)
+    proposed_text: str | None = None  # the concrete rewrite
+    # TECHNICAL
+    code_language: str | None = None  # "html" | "json" | "jsonld"
+    code_snippet: str | None = None   # exact code to paste
+    instructions: list[str] = Field(default_factory=list)  # step-by-step apply guide
+
+
 class LLMFinding(BaseModel):
     """A single recommendation as produced by the brain."""
     title: str
@@ -97,6 +120,7 @@ class LLMFinding(BaseModel):
     confidence: int = Field(ge=1, le=5, description="1=speculative, 5=certain")
     evidence: list[str] = Field(default_factory=list)
     target_engine: TargetEngine | None = None
+    change: ConcreteChange | None = None  # the concrete fix (rewrite or code change)
 
 
 class EngineReadiness(BaseModel):
@@ -151,3 +175,48 @@ class ProgressEvent(BaseModel):
     step: str
     message: str
     pct: int = Field(ge=0, le=100)
+
+
+# --------------------------------------------------------------- AI Studio (rewrite)
+class RewriteBlock(BaseModel):
+    """One unit of the proposed page rewrite (original -> proposed) shown in the studio."""
+    id: str                                  # "blk-1"
+    kind: str                                # "title"|"heading"|"paragraph"|"meta"|"jsonld"
+    label: str                               # human label, e.g. "Title tag", "Intro paragraph"
+    original: str = ""                       # original text/code ("" if net-new)
+    proposed: str = ""                       # rewritten text/code
+    changed: bool = False                    # computed server-side (proposed != original)
+    is_technical: bool = False               # content vs technical-change block
+    change_explanation: str | None = None    # plain-language "why", for changed blocks
+
+
+class LLMRewrite(BaseModel):
+    """Structured rewrite as produced by the brain (server adds run_id/model_key)."""
+    summary: str
+    content_blocks: list[RewriteBlock] = Field(default_factory=list)
+    technical_blocks: list[RewriteBlock] = Field(default_factory=list)
+
+
+class PageRewrite(BaseModel):
+    """The assembled, persisted rewrite for a run."""
+    run_id: str
+    summary: str
+    content_blocks: list[RewriteBlock] = Field(default_factory=list)
+    technical_blocks: list[RewriteBlock] = Field(default_factory=list)
+    model_key: str
+
+
+class BlockEdit(BaseModel):
+    """A live edit the chat agent applies to a rewrite block."""
+    block_id: str                            # existing block id, or "new"
+    label: str | None = None                 # required when block_id == "new"
+    is_technical: bool = False               # used when creating a new block
+    proposed: str
+    change_explanation: str
+
+
+class ChatResponse(BaseModel):
+    """Structured output for one chat turn in the studio."""
+    reply: str
+    block_edits: list[BlockEdit] = Field(default_factory=list)
+    new_recommendations: list[LLMFinding] = Field(default_factory=list)

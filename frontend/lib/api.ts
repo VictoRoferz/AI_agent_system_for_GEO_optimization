@@ -14,6 +14,18 @@ export interface EngineReadiness {
   rationale: string;
 }
 
+export type ChangeType = "content" | "technical";
+
+export interface ConcreteChange {
+  change_type: ChangeType;
+  target: string;
+  original_text: string | null;
+  proposed_text: string | null;
+  code_language: string | null;
+  code_snippet: string | null;
+  instructions: string[];
+}
+
 export interface Recommendation {
   id: string;
   title: string;
@@ -27,6 +39,7 @@ export interface Recommendation {
   target_engine: string | null;
   priority: Priority;
   priority_rank: number;
+  change?: ConcreteChange | null;
 }
 
 export interface Alignment {
@@ -149,4 +162,70 @@ export function engineLabel(key: string): string {
       gemini: "Gemini",
     }[key] || key
   );
+}
+
+// ----------------------------------------------------------------- AI Studio
+export interface RewriteBlock {
+  id: string;
+  kind: string;
+  label: string;
+  original: string;
+  proposed: string;
+  changed: boolean;
+  is_technical: boolean;
+  change_explanation: string | null;
+}
+
+export interface PageRewrite {
+  run_id: string;
+  summary: string;
+  content_blocks: RewriteBlock[];
+  technical_blocks: RewriteBlock[];
+  model_key: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface StudioState {
+  rewrite: PageRewrite | null;
+  chat_history: ChatMessage[];
+  extra_recommendations: Recommendation[];
+}
+
+export interface ChatTurnResult {
+  reply: string;
+  rewrite: PageRewrite | null;
+  edited_block_ids: string[];
+  new_recommendations: Recommendation[];
+}
+
+export async function getStudio(runId: string): Promise<StudioState> {
+  const r = await fetch(`${API_BASE}/api/runs/${runId}/studio`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Failed to load studio (${r.status})`);
+  return r.json();
+}
+
+export async function generateRewrite(
+  runId: string,
+  regenerate = false
+): Promise<PageRewrite> {
+  const r = await fetch(
+    `${API_BASE}/api/runs/${runId}/rewrite?regenerate=${regenerate}`,
+    { method: "POST" }
+  );
+  if (!r.ok) throw new Error(`Failed to generate rewrite (${r.status})`);
+  return r.json();
+}
+
+export async function sendChat(runId: string, message: string): Promise<ChatTurnResult> {
+  const r = await fetch(`${API_BASE}/api/runs/${runId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!r.ok) throw new Error(`Chat failed (${r.status})`);
+  return r.json();
 }

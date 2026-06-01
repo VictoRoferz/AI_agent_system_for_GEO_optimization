@@ -21,8 +21,21 @@ queries, and whether the page communicates what the strategic goals intend.
 Ground every judgement in the knowledge base (if provided) and the extracted page signals.
 Be specific, critical and actionable. For each recommendation provide: what to do, WHY it \
 matters for AI citation/visibility, the expected impact, an impact_score (1-5), an effort \
-level, and a confidence (1-5). Prefer a focused set of high-leverage recommendations over a \
-long shallow list. Reference concrete evidence from the page.
+level, and a confidence (1-5). Aim for around 3 high-leverage recommendations (use fewer \
+only if the page is already strong, or a few more only when genuinely necessary) rather than \
+a long shallow list. Reference concrete evidence from the page.
+
+CRITICAL — every recommendation MUST be concrete and immediately usable via its `change` \
+object, never vague advice:
+  * If the recommendation is about COPY/CONTENT (title, heading, meta description, a \
+paragraph), set change.change_type="content", change.target (where on the page), \
+change.original_text (quote the current text verbatim, or "" if it does not exist yet), and \
+change.proposed_text (the ACTUAL rewritten text, ready to paste — not a description of it).
+  * If the recommendation is TECHNICAL (JSON-LD/schema, meta/link tags, markup, canonical, \
+robots/llms.txt), set change.change_type="technical", change.target, change.code_language \
+("html"|"json"|"jsonld"), change.code_snippet (the EXACT code to paste, fully formed), and \
+change.instructions (clear step-by-step on where and how to apply it).
+Fill in the real values for the chosen branch; leave the other branch's fields null.
 
 You will also score citation readiness (0-100) per requested target engine and assess \
 goal alignment and query coverage."""
@@ -67,7 +80,7 @@ async def synthesize(
         schema=LLMAnalysis,
         model_key=request.model_key,
         cache_prefix=kb_context or None,
-        max_tokens=6000,
+        max_tokens=8000,
     )
 
     engine_readiness = _merge_engine_readiness(llm.engine_readiness, mode_output.observed_engines)
