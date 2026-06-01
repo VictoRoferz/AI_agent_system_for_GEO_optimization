@@ -49,6 +49,12 @@ class ChangeType(str, Enum):
     TECHNICAL = "technical"   # exact code change (JSON-LD, meta tag, markup)
 
 
+class KBCoverageStatus(str, Enum):
+    COVERED = "covered"   # the page already satisfies this knowledge-base factor
+    PARTIAL = "partial"   # partially satisfied; room to improve
+    GAP = "gap"           # missing / not addressed by the page
+
+
 # ------------------------------------------------------------------------- request
 class AnalysisRequest(BaseModel):
     url: str
@@ -62,6 +68,14 @@ class AnalysisRequest(BaseModel):
 
 
 # ----------------------------------------------------------------------- ingestion
+class TextBlock(BaseModel):
+    """A readable content block in the page snapshot, tagged with a stable id so the
+    rewrite can anchor each change to an exact element (data-geo-id in snapshot_html)."""
+    id: str   # matches the snapshot's data-geo-id, e.g. "g1"
+    tag: str  # "p" | "h2" | "li" | ...
+    text: str
+
+
 class PageSignals(BaseModel):
     """GEO-relevant signals extracted from the fetched page."""
     final_url: str
@@ -82,6 +96,8 @@ class PageSignals(BaseModel):
     blocks_ai_crawlers: bool = False
     js_dependent: bool = False  # significant content only present after JS render
     main_text: str = ""         # extracted readable content (may be truncated downstream)
+    snapshot_html: str = ""     # sanitized HTML for the Studio live-preview pane (capped)
+    text_blocks: list[TextBlock] = Field(default_factory=list)  # tagged content blocks
 
 
 class GoalsDocument(BaseModel):
@@ -138,6 +154,18 @@ class AlignmentAssessment(BaseModel):
     gaps: list[str] = Field(default_factory=list)
 
 
+class KBCoverageItem(BaseModel):
+    """One knowledge-base factor and how the analyzed page measures up against it.
+
+    Surfaced as a checklist so the user can see every KB factor was considered and
+    which gaps each recommendation addresses.
+    """
+    factor: str                                   # the KB factor/pillar name
+    status: KBCoverageStatus
+    assessment: str                               # one line: how the page does on this factor
+    related_rec_ids: list[str] = Field(default_factory=list)  # rec ids that close the gap
+
+
 class LLMAnalysis(BaseModel):
     """Full structured output requested from the brain (mode-agnostic)."""
     executive_summary: str
@@ -145,6 +173,7 @@ class LLMAnalysis(BaseModel):
     engine_readiness: list[EngineReadiness] = Field(default_factory=list)
     alignment: AlignmentAssessment
     findings: list[LLMFinding] = Field(default_factory=list)
+    kb_coverage: list[KBCoverageItem] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------- assembled result
@@ -160,6 +189,7 @@ class AnalysisResult(BaseModel):
     engine_readiness: list[EngineReadiness]
     alignment: AlignmentAssessment
     recommendations: list[Recommendation]
+    kb_coverage: list[KBCoverageItem] = Field(default_factory=list)
     # context / metadata
     url: str
     queries: list[str]
@@ -188,6 +218,7 @@ class RewriteBlock(BaseModel):
     changed: bool = False                    # computed server-side (proposed != original)
     is_technical: bool = False               # content vs technical-change block
     change_explanation: str | None = None    # plain-language "why", for changed blocks
+    anchor_id: str | None = None             # data-geo-id of the page block this maps to
 
 
 class LLMRewrite(BaseModel):

@@ -1,12 +1,13 @@
 """Shared synthesis step — fuse mode evidence into one AnalysisResult via the brain."""
 from __future__ import annotations
 
-from app.analysis.prioritization import prioritize
+from app.analysis.prioritization import prioritize, rank_order
 from app.analysis.schemas import (
     AnalysisRequest,
     AnalysisResult,
     EngineReadiness,
     GoalsDocument,
+    KBCoverageItem,
     LLMAnalysis,
     PageSignals,
 )
@@ -21,9 +22,23 @@ queries, and whether the page communicates what the strategic goals intend.
 Ground every judgement in the knowledge base (if provided) and the extracted page signals.
 Be specific, critical and actionable. For each recommendation provide: what to do, WHY it \
 matters for AI citation/visibility, the expected impact, an impact_score (1-5), an effort \
-level, and a confidence (1-5). Aim for around 3 high-leverage recommendations (use fewer \
-only if the page is already strong, or a few more only when genuinely necessary) rather than \
-a long shallow list. Reference concrete evidence from the page.
+level, and a confidence (1-5). Reference concrete evidence from the page.
+
+BE EXHAUSTIVE — systematically evaluate the page against EVERY factor/pillar in the knowledge \
+base. Produce a recommendation for every genuine, KB-grounded gap or improvement; there is NO \
+cap on the number of recommendations. Do not pad with trivia, but omit nothing real. Order \
+does not matter (priority is assigned downstream).
+
+REGULATED-INDUSTRY COMPLIANCE — ALWAYS APPLY. Treat the page as regulated pharma / medtech / \
+biotech / healthcare content. Never use or propose unsubstantiated promotional or marketing \
+language. Every efficacy, safety, superiority or outcome claim MUST be backed by a citable \
+study, clinical data or regulatory approval (FDA/EMA/MDR); if the page lacks supporting \
+evidence, do NOT invent a claim — instead recommend adding the evidence/citation, or soften it \
+to a compliant, factual statement. Avoid absolute or comparative claims ("best", "cure", \
+"guaranteed", "#1", "superior to X") without head-to-head evidence, and avoid off-label \
+implications. Flag any existing non-compliant claim on the page as a P0-level risk (high \
+impact_score) with a concrete compliant rewrite. All `change` copy you propose must itself be \
+compliant.
 
 CRITICAL — every recommendation MUST be concrete and immediately usable via its `change` \
 object, never vague advice:
@@ -38,13 +53,50 @@ change.instructions (clear step-by-step on where and how to apply it).
 Fill in the real values for the chosen branch; leave the other branch's fields null.
 
 You will also score citation readiness (0-100) per requested target engine and assess \
-goal alignment and query coverage."""
+goal alignment and query coverage.
+
+KB COVERAGE CHECKLIST — derive the list of distinct factors/pillars from the knowledge base \
+and, in `kb_coverage`, return ONE item per factor so the user can see every factor was \
+considered. For each: `factor` (the factor name), `status` ("covered" | "partial" | "gap"), a \
+one-line `assessment` of how the page does, and `related_rec_ids` listing the finding(s) that \
+address it — reference each finding by its 1-based position in your `findings` list (e.g. \
+"1", "3"). Leave `related_rec_ids` empty for fully covered factors with no needed change."""
 
 
 def _goals_block(goals: GoalsDocument | None) -> str:
     if not goals or not goals.text:
         return "## Strategic goals\n(none provided)"
     return f"## Strategic goals (from {goals.filename})\n{goals.text[:8000]}"
+
+
+def _remap_kb_coverage(
+    items: list[KBCoverageItem], findings: list
+) -> list[KBCoverageItem]:
+    """Translate KB-coverage `related_rec_ids` (1-based finding positions from the brain)
+    into the final `rec-N` ids assigned by prioritization."""
+    order = rank_order(findings)  # order[rank] = original finding index
+    orig_to_recid = {orig: f"rec-{rank + 1}" for rank, orig in enumerate(order)}
+    out: list[KBCoverageItem] = []
+    for item in items:
+        mapped: list[str] = []
+        for ref in item.related_rec_ids:
+            token = str(ref).strip().lstrip("#").removeprefix("rec-").removeprefix("finding-")
+            try:
+                orig = int(token) - 1
+            except ValueError:
+                continue
+            rid = orig_to_recid.get(orig)
+            if rid and rid not in mapped:
+                mapped.append(rid)
+        out.append(
+            KBCoverageItem(
+                factor=item.factor,
+                status=item.status,
+                assessment=item.assessment,
+                related_rec_ids=mapped,
+            )
+        )
+    return out
 
 
 def _merge_engine_readiness(
@@ -85,6 +137,7 @@ async def synthesize(
 
     engine_readiness = _merge_engine_readiness(llm.engine_readiness, mode_output.observed_engines)
     recommendations = prioritize(llm.findings)
+    kb_coverage = _remap_kb_coverage(llm.kb_coverage, llm.findings)
 
     return AnalysisResult(
         executive_summary=llm.executive_summary,
@@ -92,6 +145,7 @@ async def synthesize(
         engine_readiness=engine_readiness,
         alignment=llm.alignment,
         recommendations=recommendations,
+        kb_coverage=kb_coverage,
         url=page.final_url,
         queries=request.queries,
         mode=request.mode,

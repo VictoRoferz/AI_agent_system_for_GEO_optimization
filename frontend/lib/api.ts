@@ -50,17 +50,47 @@ export interface Alignment {
   gaps: string[];
 }
 
+export type KBCoverageStatus = "covered" | "partial" | "gap";
+
+export interface KBCoverageItem {
+  factor: string;
+  status: KBCoverageStatus;
+  assessment: string;
+  related_rec_ids: string[];
+}
+
+export interface PageSignals {
+  final_url: string;
+  title: string | null;
+  meta_description: string | null;
+  canonical: string | null;
+  lang: string | null;
+  headings: string[]; // e.g. "h1: Title"
+  word_count: number;
+  has_jsonld: boolean;
+  schema_types: string[];
+  has_author: boolean;
+  published_date: string | null;
+  modified_date: string | null;
+  robots_txt_present: boolean;
+  llms_txt_present: boolean;
+  blocks_ai_crawlers: boolean;
+  js_dependent: boolean;
+}
+
 export interface AnalysisResult {
   executive_summary: string;
   overall_score: number;
   engine_readiness: EngineReadiness[];
   alignment: Alignment;
   recommendations: Recommendation[];
+  kb_coverage: KBCoverageItem[];
   url: string;
   queries: string[];
   mode: string;
   model_key: string;
   target_engines: string[];
+  page_signals: PageSignals | null;
   notes: string[];
 }
 
@@ -174,6 +204,7 @@ export interface RewriteBlock {
   changed: boolean;
   is_technical: boolean;
   change_explanation: string | null;
+  anchor_id?: string | null;
 }
 
 export interface PageRewrite {
@@ -200,6 +231,17 @@ export interface ChatTurnResult {
   rewrite: PageRewrite | null;
   edited_block_ids: string[];
   new_recommendations: Recommendation[];
+}
+
+export interface PageSnapshot {
+  html: string;
+  final_url: string;
+}
+
+export async function fetchSnapshot(runId: string): Promise<PageSnapshot> {
+  const r = await fetch(`${API_BASE}/api/runs/${runId}/snapshot`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Failed to load snapshot (${r.status})`);
+  return r.json();
 }
 
 export async function getStudio(runId: string): Promise<StudioState> {

@@ -10,6 +10,7 @@ import {
   type Recommendation,
 } from "@/lib/api";
 import CopyButton from "./CopyButton";
+import KBCoverage from "./KBCoverage";
 import PriorityMatrix from "./PriorityMatrix";
 import ScoreGauge from "./ScoreGauge";
 
@@ -95,7 +96,7 @@ function EngineCard({ er }: { er: EngineReadiness }) {
 
 function ActionCard({ rec }: { rec: Recommendation }) {
   return (
-    <div className="card p-5">
+    <div id={rec.id} className="card scroll-mt-20 p-5">
       <div className="flex items-start gap-3">
         <span
           className={`mt-0.5 inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-xs font-bold text-white ${PRIORITY_COLOR[rec.priority]}`}
@@ -173,7 +174,7 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
             href={`/results/${runId}/studio`}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
           >
-            ✨ Open AI Studio
+            ✨ Syte AI agent: optimize article
           </a>
           <a
             href={`${API_BASE}/api/runs/${runId}/export?format=md`}
@@ -266,6 +267,9 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
           ))}
         </div>
       </div>
+
+      {/* Knowledge-base coverage checklist */}
+      <KBCoverage items={result.kb_coverage || []} />
 
       {/* Notes */}
       {result.notes.length > 0 && (

@@ -38,6 +38,15 @@ async def get_run(run_id: str) -> dict:
     run = await repository.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+    # Drop the (large) page snapshot from the result payload; the Studio fetches it
+    # separately via /runs/{id}/snapshot.
+    result = run.result
+    signals = result.get("page_signals") if isinstance(result, dict) else None
+    if isinstance(signals, dict) and "snapshot_html" in signals:
+        result = {
+            **result,
+            "page_signals": {k: v for k, v in signals.items() if k != "snapshot_html"},
+        }
     return {
         "id": run.id,
         "created_at": run.created_at.isoformat(),
@@ -48,7 +57,7 @@ async def get_run(run_id: str) -> dict:
         "queries": run.queries,
         "target_engines": run.target_engines,
         "goals_filename": run.goals_filename,
-        "result": run.result,
+        "result": result,
         "error": run.error,
     }
 

@@ -1,17 +1,21 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import CopyButton from "@/components/CopyButton";
+import DiffPanes from "@/components/DiffPanes";
+import TechnicalMap from "@/components/TechnicalMap";
 import { ChangeView } from "@/components/Report";
 import {
   PRIORITY_COLOR,
+  fetchSnapshot,
   generateRewrite,
   getRun,
   getStudio,
   sendChat,
   type ChatMessage,
   type PageRewrite,
+  type PageSignals,
   type Recommendation,
   type RewriteBlock,
 } from "@/lib/api";
@@ -103,6 +107,8 @@ function TechnicalRow({ block, flash }: { block: RewriteBlock; flash: boolean })
 export default function StudioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [url, setUrl] = useState("");
+  const [signals, setSignals] = useState<PageSignals | null>(null);
+  const [snapshotHtml, setSnapshotHtml] = useState<string>("");
   const [rewrite, setRewrite] = useState<PageRewrite | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [suggestions, setSuggestions] = useState<Recommendation[]>([]);
@@ -113,6 +119,15 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // The set of (original → proposed) content changes used to mark up both live panes.
+  const changes = useMemo(
+    () =>
+      (rewrite?.content_blocks || [])
+        .filter((b) => b.changed && (b.original.trim() || b.anchor_id))
+        .map((b) => ({ original: b.original, proposed: b.proposed, anchorId: b.anchor_id })),
+    [rewrite]
+  );
 
   // Load run + studio state; generate the rewrite on first visit.
   useEffect(() => {
@@ -126,6 +141,11 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
           return;
         }
         setUrl(run.result.url);
+        setSignals(run.result.page_signals ?? null);
+        // Load the page snapshot for the live panes (don't block on failure).
+        fetchSnapshot(id)
+          .then((snap) => !cancelled && setSnapshotHtml(snap.html || ""))
+          .catch(() => !cancelled && setSnapshotHtml(""));
         const state = await getStudio(id);
         if (cancelled) return;
         setMessages(state.chat_history || []);
@@ -152,7 +172,10 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
   }, [id]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Only scroll within the chat panel (block: "nearest"), and never on first mount,
+    // so opening the studio doesn't jump the page down to the chat.
+    if (messages.length === 0) return;
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages, sending]);
 
   function flash(ids: string[]) {
@@ -229,7 +252,7 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-navy-900">AI Studio</h1>
+            <h1 className="text-2xl font-bold text-navy-900">Syte AI agent — optimize article</h1>
             <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-dark">
               proposed rewrite
             </span>
@@ -261,6 +284,9 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
         </div>
       )}
 
+      {/* Side-by-side: full original (yellow + ▸) vs full proposed (green), scroll-synced */}
+      {rewrite && <DiffPanes html={snapshotHtml} changes={changes} url={url} />}
+
       {/* Content rewrite — two panes */}
       <div>
         <div className="mb-2 flex items-center gap-3">
@@ -280,10 +306,18 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
         </div>
       </div>
 
-      {/* Technical changes */}
+      {/* Technical: structure & metadata map (original vs proposed) */}
+      {rewrite && (
+        <div>
+          <h2 className="section-title mb-2">Technical structure & metadata</h2>
+          <TechnicalMap signals={signals} rewrite={rewrite} />
+        </div>
+      )}
+
+      {/* Technical changes — exact code to ship */}
       {rewrite && rewrite.technical_blocks.length > 0 && (
         <div>
-          <h2 className="section-title mb-2">Technical changes</h2>
+          <h2 className="section-title mb-2">Technical changes — code</h2>
           <div className="space-y-3">
             {rewrite.technical_blocks.map((b) => (
               <TechnicalRow key={b.id} block={b} flash={flashIds.has(b.id)} />

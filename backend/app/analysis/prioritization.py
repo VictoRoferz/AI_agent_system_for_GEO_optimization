@@ -25,10 +25,19 @@ def _bucket(score: float) -> Priority:
     return Priority.P3
 
 
+def rank_order(findings: list[LLMFinding]) -> list[int]:
+    """Original indices of `findings` sorted by score (desc) — i.e. rec-1 first.
+
+    `rank_order(findings)[k]` is the original position of the finding that becomes
+    `rec-{k+1}`. Lets callers map a finding (by its original index) to its final rec id.
+    """
+    return sorted(range(len(findings)), key=lambda i: _score(findings[i]), reverse=True)
+
+
 def prioritize(findings: list[LLMFinding]) -> list[Recommendation]:
-    ranked = sorted(findings, key=_score, reverse=True)
     recs: list[Recommendation] = []
-    for i, f in enumerate(ranked, start=1):
+    for i, orig in enumerate(rank_order(findings), start=1):
+        f = findings[orig]
         recs.append(
             Recommendation(
                 **f.model_dump(),

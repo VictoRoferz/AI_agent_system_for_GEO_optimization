@@ -85,7 +85,10 @@ async def analyze(
                     result = payload  # type: ignore[assignment]
             assert result is not None
             await repository.save_run(run_id, request, goals_filename, result)
-            yield _sse("result", {"run_id": run_id, **result.model_dump(mode="json")})
+            # The snapshot HTML is persisted with the run but kept out of the streamed
+            # payload (it can be ~600 KB); the Studio fetches it via /runs/{id}/snapshot.
+            payload = result.model_dump(mode="json", exclude={"page_signals": {"snapshot_html"}})
+            yield _sse("result", {"run_id": run_id, **payload})
         except Exception as exc:  # surface failures to the UI and persist the error
             await repository.save_run(run_id, request, goals_filename, None, error=str(exc))
             yield _sse("error", {"run_id": run_id, "message": str(exc)})

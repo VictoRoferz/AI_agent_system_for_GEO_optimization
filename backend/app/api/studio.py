@@ -43,6 +43,19 @@ async def get_studio(run_id: str) -> dict:
     }
 
 
+@router.get("/{run_id}/snapshot")
+async def get_snapshot(run_id: str) -> dict:
+    """Return the sanitized HTML snapshot of the analyzed page for the Studio left pane."""
+    run = await repository.get_run(run_id)
+    if not run or not run.result:
+        raise HTTPException(status_code=404, detail="Run or result not found")
+    signals = run.result.get("page_signals") or {}
+    return {
+        "html": signals.get("snapshot_html", ""),
+        "final_url": signals.get("final_url", run.url),
+    }
+
+
 @router.post("/{run_id}/rewrite")
 async def create_rewrite(run_id: str, regenerate: bool = False) -> dict:
     """Generate (or return the cached) page rewrite for a run."""

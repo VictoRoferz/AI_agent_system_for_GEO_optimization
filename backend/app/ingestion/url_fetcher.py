@@ -13,8 +13,9 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from selectolax.parser import HTMLParser
 
-from app.analysis.schemas import PageSignals
+from app.analysis.schemas import PageSignals, TextBlock
 from app.config import get_settings
+from app.ingestion.snapshot import sanitize_snapshot, tag_blocks
 from app.storage import repository
 
 USER_AGENT = "Mozilla/5.0 (compatible; GEO-Assistant/0.1; +https://example.com/bot)"
@@ -87,6 +88,10 @@ def _extract_signals(url: str, status: int, raw_html: str, rendered_html: str | 
 
     author_meta = _meta(tree, name="author")
 
+    snapshot = sanitize_snapshot(html, url)
+    snapshot, raw_blocks = tag_blocks(snapshot)
+    text_blocks = [TextBlock(**b) for b in raw_blocks]
+
     return PageSignals(
         final_url=url,
         status_code=status,
@@ -103,7 +108,44 @@ def _extract_signals(url: str, status: int, raw_html: str, rendered_html: str | 
         modified_date=modified or _meta(tree, property="article:modified_time"),
         js_dependent=js_dependent,
         main_text=main_text[:_MAX_MAIN_TEXT],
+        snapshot_html=snapshot,
+        text_blocks=text_blocks,
     )
+
+
+# Remove cookie-consent / CMP overlays (they cover the page in a static snapshot and
+# block interaction) and restore scrolling that those modals often disable.
+_CLEANUP_JS = """() => {
+  const sels = [
+    '#onetrust-consent-sdk', '#onetrust-banner-sdk', '.onetrust-pc-dark-filter',
+    '#CybotCookiebotDialog', '#CybotCookiebotDialogBodyUnderlay',
+    '#usercentrics-root', '#usercentrics-cmp-ui',
+    '#didomi-host', '.didomi-popup-open',
+    '#cookie-law-info-bar', '.cli-modal-backdrop',
+    '[class*="cookie-consent" i]', '[id*="cookie-consent" i]',
+    '[class*="cookie-banner" i]', '[id*="cookie-banner" i]',
+  ];
+  sels.forEach((s) => { try { document.querySelectorAll(s).forEach((e) => e.remove()); } catch (e) {} });
+  document.documentElement.style.overflow = 'auto';
+  if (document.body) document.body.style.overflow = 'auto';
+}"""
+
+# Scroll the page top-to-bottom so lazy-loaded images/content actually load before
+# we capture the HTML, then return to the top so the snapshot looks natural.
+_AUTOSCROLL_JS = """async () => {
+  await new Promise((resolve) => {
+    let total = 0;
+    const step = 700;
+    const timer = setInterval(() => {
+      window.scrollBy(0, step);
+      total += step;
+      if (total >= document.body.scrollHeight - window.innerHeight) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 120);
+  });
+}"""
 
 
 async def _render_with_playwright(url: str) -> str | None:
@@ -114,8 +156,17 @@ async def _render_with_playwright(url: str) -> str | None:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page(user_agent=USER_AGENT)
+            page = await browser.new_page(
+                user_agent=USER_AGENT, viewport={"width": 1280, "height": 900}
+            )
             await page.goto(url, wait_until="networkidle", timeout=30_000)
+            try:  # best-effort: trigger lazy assets, drop consent overlays, then settle
+                await page.evaluate(_AUTOSCROLL_JS)
+                await page.evaluate("window.scrollTo(0, 0)")
+                await page.evaluate(_CLEANUP_JS)
+                await page.wait_for_timeout(600)
+            except Exception:
+                pass
             html = await page.content()
             await browser.close()
             return html
@@ -150,7 +201,9 @@ async def fetch_page(url: str, use_cache: bool = True) -> PageSignals:
     key = _cache_key(url)
     if use_cache:
         cached = await repository.get_cached_signals(key)
-        if cached:
+        # Only reuse a cached page if it carries a snapshot (or rendering is off);
+        # entries from before snapshot capture must be re-fetched so the Studio works.
+        if cached and (cached.snapshot_html or not settings.enable_playwright):
             return cached
 
     async with httpx.AsyncClient(

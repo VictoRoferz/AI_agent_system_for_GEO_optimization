@@ -28,13 +28,27 @@ recommendations so AI search engines (ChatGPT, Google AI Overviews, Perplexity, 
 far more likely to CITE it — while preserving the page's real meaning, facts and intent. \
 Never invent facts that aren't supported by the original page.
 
+REGULATED-INDUSTRY COMPLIANCE — ALWAYS APPLY. Treat the page as regulated pharma / medtech / \
+biotech / healthcare content. Every word you propose must be compliant: no unsubstantiated \
+promotional or marketing language; every efficacy, safety, superiority or outcome claim must \
+be backed by a citable study, clinical data or regulatory approval present on the page — if \
+the evidence is not there, do NOT assert the claim (state it factually, add a citation \
+placeholder, or soften it). Avoid absolute/comparative claims ("best", "cure", "guaranteed", \
+"#1", "superior to X") without head-to-head evidence, and avoid off-label implications. If the \
+original text contains a non-compliant claim, rewrite it into a compliant version and explain \
+that in `change_explanation`.
+
 Return two sets of blocks:
   * content_blocks — the reader-facing copy: the title, key headings and the main \
 paragraphs. For each, quote the `original` verbatim (use "" if it is net-new), write the \
 concrete `proposed` rewrite (ready to publish, not a description), set is_technical=false, \
 and give a short plain-language `change_explanation` a non-technical user understands \
 (what changed and why it helps AI citation). If a block is unchanged, set proposed equal to \
-original and explain it was kept.
+original and explain it was kept. \
+IMPORTANT: set `anchor_id` to the id of the matching page block from the "Page content \
+blocks" list below (e.g. "g7"), and copy that block's text into `original` verbatim. This \
+lets the UI highlight the exact element. Leave anchor_id null only for genuinely net-new \
+content that has no existing block.
   * technical_blocks — exact code changes: JSON-LD/schema, meta/link tags, canonical, etc. \
 For each, put any existing markup in `original` ("" if net-new), the EXACT code to ship in \
 `proposed`, set is_technical=true, set a clear `label` (e.g. "JSON-LD Article schema"), and \
@@ -53,6 +67,13 @@ short plain-language `change_explanation`. Only edit what the user asked about;
   * when the user asks for more or different recommendations, return them in \
 `new_recommendations`, each concrete (fill the `change` object: a content rewrite or an exact \
 technical code change with instructions), with impact_score, effort and confidence.
+
+REGULATED-INDUSTRY COMPLIANCE — ALWAYS APPLY. Treat the page as regulated pharma / medtech / \
+biotech / healthcare content. Any copy or recommendation you propose must be compliant: no \
+unsubstantiated promotional language; no efficacy/safety/superiority/outcome claim without \
+citable study, clinical data or regulatory approval; avoid absolute/comparative claims and \
+off-label implications. If the user asks for non-compliant copy, propose a compliant \
+alternative and briefly explain why.
 
 Always write a helpful `reply`. Leave `block_edits` and `new_recommendations` empty when the \
 user only asked a question."""
@@ -78,6 +99,17 @@ def _signals_block(result: AnalysisResult) -> str:
         f"modified: {p.modified_date or '-'}\n"
         f"Headings:\n{headings}\n\n"
         f"## Main text (extracted)\n{p.main_text[:12000]}"
+    )
+
+
+def _page_blocks(result: AnalysisResult) -> str:
+    blocks = result.page_signals.text_blocks if result.page_signals else []
+    if not blocks:
+        return "## Page content blocks\n(none captured — leave anchor_id null)"
+    lines = [f"- {b.id} [{b.tag}]: {b.text}" for b in blocks]
+    return (
+        "## Page content blocks (anchor each content rewrite to one of these ids)\n"
+        + "\n".join(lines)
     )
 
 
@@ -108,6 +140,7 @@ def _finalize_blocks(blocks: list[RewriteBlock], start: int, technical: bool) ->
 async def generate_rewrite(run_id: str, result: AnalysisResult) -> PageRewrite:
     user = (
         f"{_signals_block(result)}\n\n"
+        f"{_page_blocks(result)}\n\n"
         f"{_recs_block(result.recommendations)}\n\n"
         f"User queries the page should win citations for:\n"
         + ("\n".join(f"- {q}" for q in result.queries) or "(none)")
