@@ -24,3 +24,13 @@ body {
   body { @apply bg-white; }
   .card { @apply shadow-none border-slate-300; break-inside: avoid; }
 }
+
+/* "Brain of moving points" AI animation (see components/BrainPoints.tsx) */
+@keyframes geoTwinkle { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+@keyframes geoBreathe { 0%, 100% { transform: scale(0.9); } 50% { transform: scale(1.06); } }
+.geo-brain-group { transform-box: fill-box; transform-origin: center; animation: geoBreathe 3.2s ease-in-out infinite; }
+.geo-brain-node { animation: geoTwinkle 1.8s ease-in-out infinite; }
+.geo-brain-link { animation: geoTwinkle 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .geo-brain-group, .geo-brain-node, .geo-brain-link { animation: none !important; }
+}

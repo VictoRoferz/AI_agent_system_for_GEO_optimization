@@ -9,6 +9,8 @@ import {
   type EngineReadiness,
   type Recommendation,
 } from "@/lib/api";
+import BrainPoints from "./BrainPoints";
+import ClaimCheck from "./ClaimCheck";
 import CopyButton from "./CopyButton";
 import KBCoverage from "./KBCoverage";
 import PriorityMatrix from "./PriorityMatrix";
@@ -172,9 +174,10 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
         <div className="no-print flex flex-wrap gap-2">
           <a
             href={`/results/${runId}/studio`}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent-dark"
           >
-            ✨ Syte AI agent: optimize article
+            <BrainPoints size={18} color="#ffffff" />
+            Syte AI agent: optimize article
           </a>
           <a
             href={`${API_BASE}/api/runs/${runId}/export?format=md`}
@@ -191,9 +194,10 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
         </div>
       </div>
 
-      {/* Executive summary + overall score */}
+      {/* Executive summary + scores */}
       <div className="card p-6 flex flex-col gap-6 sm:flex-row sm:items-center">
         <ScoreGauge score={result.overall_score} label="Overall GEO score" />
+        <ScoreGauge score={result.compliance_score} label="Evidence & Compliance" />
         <div className="flex-1">
           <h2 className="section-title">Executive summary</h2>
           <p className="mt-1 text-slate-700 leading-relaxed">{result.executive_summary}</p>
@@ -270,6 +274,9 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
 
       {/* Knowledge-base coverage checklist */}
       <KBCoverage items={result.kb_coverage || []} />
+
+      {/* Claim & evidence check (does each fact need a study/proof?) */}
+      <ClaimCheck items={result.claims || []} />
 
       {/* Notes */}
       {result.notes.length > 0 && (

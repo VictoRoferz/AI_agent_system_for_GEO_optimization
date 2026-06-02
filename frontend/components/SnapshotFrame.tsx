@@ -1,11 +1,13 @@
 "use client";
 
 import { forwardRef, useEffect, useMemo, useState } from "react";
+import type { Claim } from "@/lib/api";
 
 export interface Change {
   original: string;
   proposed: string;
   anchorId?: string | null;
+  flags?: { quote: string; flag: "green" | "yellow" | "red"; note?: string }[];
 }
 
 // Cookie/consent overlays cover the snapshot and obscure content — remove them.
@@ -31,14 +33,25 @@ const STYLE = `
 html,body{overflow:auto!important;}
 .geo-change-orig{background:#fde047!important;border-radius:2px;box-shadow:0 0 0 2px #facc15;scroll-margin-top:60px;}
 .geo-change-orig.open{text-decoration:line-through;opacity:.55;}
-.geo-arrow{cursor:pointer;border:none;background:#0f9b8e;color:#fff;border-radius:4px;
+.geo-arrow{cursor:pointer;border:none;background:#356f4f;color:#fff;border-radius:4px;
   font-size:11px;line-height:1;margin:0 4px;padding:2px 6px;vertical-align:middle;
   text-decoration:none!important;opacity:1!important;display:inline-block;}
-.geo-arrow:hover{background:#0c7d72;}
+.geo-arrow:hover{background:#2a5a40;}
 .geo-new{background:#bbf7d0!important;color:#065f46!important;border-radius:2px;padding:0 3px;
   text-decoration:none!important;opacity:1!important;box-shadow:0 0 0 1px #34d399;}
+.geo-flag-red{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#dc2626!important;text-decoration-thickness:2px!important;background:#fecaca!important;border-radius:2px;}
+.geo-flag-yellow{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#d97706!important;text-decoration-thickness:2px!important;background:#fde68a!important;border-radius:2px;}
+.geo-flag-green{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#059669!important;text-decoration-thickness:2px!important;}
 .geo-change-orig .geo-new{display:none;}
 .geo-change-orig.open .geo-new{display:inline;}
+.geo-claim-red{border-left:4px solid #ef4444;background:#fef2f2;}
+.geo-claim-yellow{border-left:4px solid #f59e0b;background:#fffbeb;}
+.geo-claim-green{border-left:4px solid #10b981;background:#ecfdf5;}
+.geo-claim-chip{margin-right:5px;font-size:.85em;}
+html.geo-cv-red .geo-claim-yellow,html.geo-cv-red .geo-claim-green{border-left:none;background:transparent;}
+html.geo-cv-red .geo-claim-yellow>.geo-claim-chip,html.geo-cv-red .geo-claim-green>.geo-claim-chip{display:none;}
+html.geo-cv-off [class*="geo-claim-"]{border-left:none!important;background:transparent!important;}
+html.geo-cv-off .geo-claim-chip{display:none;}
 `;
 
 // Reveal-on-click controller (original frame only): ▸ toggles the green proposal.
@@ -49,6 +62,17 @@ document.addEventListener('click', function (e) {
   e.preventDefault();
   var w = b.closest('.geo-change-orig');
   if (w) w.classList.toggle('open');
+});
+`;
+
+// Claim-view controller (original frame): parent toggles which claim flags are shown.
+const CLAIMVIEW = `
+window.addEventListener('message', function (e) {
+  var d = e.data; if (!d || d.geo !== 'claimview') return;
+  var cl = document.documentElement.classList;
+  cl.remove('geo-cv-red', 'geo-cv-off');
+  if (d.mode === 'red') cl.add('geo-cv-red');
+  else if (d.mode === 'off') cl.add('geo-cv-off');
 });
 `;
 
@@ -96,7 +120,48 @@ function findElement(doc: Document, ch: Change, used: Set<Element>): Element | n
   return best;
 }
 
-function buildDoc(html: string, changes: Change[], mode: "original" | "proposed"): string {
+const FLAG_EMOJI: Record<string, string> = { red: "🔴", yellow: "🟡", green: "🟢" };
+
+// Append `text` to `parent`, wrapping each flagged substring (first non-overlapping match)
+// in a <mark class="geo-flag-…"> so flagged statements/numbers show in the proposed pane.
+function appendFlagged(doc: Document, parent: Element, text: string, flags: Change["flags"]) {
+  const spans: { start: number; end: number; flag: string; note: string }[] = [];
+  const taken: [number, number][] = [];
+  for (const f of flags || []) {
+    if (!f.quote) continue;
+    let from = 0;
+    while (from <= text.length) {
+      const i = text.indexOf(f.quote, from);
+      if (i < 0) break;
+      const j = i + f.quote.length;
+      if (!taken.some(([s, e]) => i < e && j > s)) {
+        spans.push({ start: i, end: j, flag: f.flag, note: f.note || "" });
+        taken.push([i, j]);
+        break;
+      }
+      from = i + 1;
+    }
+  }
+  spans.sort((a, b) => a.start - b.start);
+  let cur = 0;
+  for (const s of spans) {
+    if (s.start > cur) parent.appendChild(doc.createTextNode(text.slice(cur, s.start)));
+    const mark = doc.createElement("mark");
+    mark.className = `geo-flag-${s.flag}`;
+    if (s.note) mark.setAttribute("title", s.note);
+    mark.textContent = text.slice(s.start, s.end);
+    parent.appendChild(mark);
+    cur = s.end;
+  }
+  if (cur < text.length) parent.appendChild(doc.createTextNode(text.slice(cur)));
+}
+
+function buildDoc(
+  html: string,
+  changes: Change[],
+  mode: "original" | "proposed",
+  claims: Claim[]
+): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const head = doc.head || doc.documentElement;
 
@@ -120,10 +185,11 @@ function buildDoc(html: string, changes: Change[], mode: "original" | "proposed"
       used.add(el);
 
       if (mode === "proposed") {
+        // Replace content with the proposed text; underline flagged statements/numbers inline.
         el.textContent = "";
         const span = doc.createElement("span");
         span.className = "geo-new";
-        span.textContent = ch.proposed;
+        appendFlagged(doc, span, ch.proposed, ch.flags);
         el.appendChild(span);
       } else {
         el.classList.add("geo-change-orig");
@@ -134,10 +200,25 @@ function buildDoc(html: string, changes: Change[], mode: "original" | "proposed"
         arrow.title = "Show proposed change";
         const span = doc.createElement("span");
         span.className = "geo-new";
-        span.textContent = ch.proposed;
+        appendFlagged(doc, span, ch.proposed, ch.flags);
         el.appendChild(arrow);
         el.appendChild(span);
       }
+    }
+  }
+
+  // Claim/evidence flags overlay (both panes): color the anchored blocks.
+  if (doc.body) {
+    for (const c of claims) {
+      if (!c.anchor_id) continue;
+      const el = doc.querySelector(`[data-geo-id="${c.anchor_id}"]`);
+      if (!el) continue;
+      el.classList.add(`geo-claim-${c.flag}`);
+      if (c.rationale) el.setAttribute("title", c.rationale);
+      const chip = doc.createElement("span");
+      chip.className = "geo-claim-chip";
+      chip.textContent = FLAG_EMOJI[c.flag] || "•";
+      el.insertBefore(chip, el.firstChild);
     }
   }
 
@@ -146,7 +227,10 @@ function buildDoc(html: string, changes: Change[], mode: "original" | "proposed"
     s.textContent = js;
     (doc.body || head).appendChild(s);
   };
-  if (mode === "original") inject(CONTROLLER);
+  if (mode === "original") {
+    inject(CONTROLLER);
+    inject(CLAIMVIEW);
+  }
   inject(SYNC);
 
   return "<!doctype html>" + doc.documentElement.outerHTML;
@@ -154,12 +238,15 @@ function buildDoc(html: string, changes: Change[], mode: "original" | "proposed"
 
 const SnapshotFrame = forwardRef<
   HTMLIFrameElement,
-  { html: string; changes: Change[]; mode: "original" | "proposed" }
->(function SnapshotFrame({ html, changes, mode }, ref) {
+  { html: string; changes: Change[]; mode: "original" | "proposed"; claims?: Claim[] }
+>(function SnapshotFrame({ html, changes, mode, claims = [] }, ref) {
   const [srcDoc, setSrcDoc] = useState<string | null>(null);
   const key = useMemo(
-    () => changes.map((c) => (c.anchorId || "") + c.original + "→" + c.proposed).join("|"),
-    [changes]
+    () =>
+      changes.map((c) => (c.anchorId || "") + c.original + "→" + c.proposed).join("|") +
+      "::" +
+      claims.map((c) => (c.anchor_id || "") + c.flag).join("|"),
+    [changes, claims]
   );
 
   useEffect(() => {
@@ -168,7 +255,7 @@ const SnapshotFrame = forwardRef<
       return;
     }
     setSrcDoc(null);
-    const t = setTimeout(() => setSrcDoc(buildDoc(html, changes, mode)), 0);
+    const t = setTimeout(() => setSrcDoc(buildDoc(html, changes, mode, claims)), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [html, key, mode]);

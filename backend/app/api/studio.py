@@ -4,18 +4,20 @@ Routes live under /api/runs/{run_id}/... so the studio always operates on a save
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from app.analysis.rewrite import chat_turn, generate_rewrite
+from app.analysis.rewrite import chat_turn, flag_proposed_text, generate_rewrite
 from app.analysis.schemas import AnalysisResult, PageRewrite, Recommendation
+from app.ingestion.doc_parser import parse_document
 from app.storage import repository
 
 router = APIRouter(prefix="/api/runs", tags=["studio"])
 
 
-class ChatRequest(BaseModel):
-    message: str
+class SelectOptionRequest(BaseModel):
+    block_id: str
+    index: int
 
 
 async def _load_result(run_id: str) -> AnalysisResult:
@@ -77,16 +79,34 @@ async def fetch_rewrite(run_id: str) -> dict:
 
 
 @router.post("/{run_id}/chat")
-async def chat(run_id: str, body: ChatRequest) -> dict:
-    """One chat turn: reply, apply any live block edits, append any new recommendations."""
+async def chat(
+    run_id: str,
+    message: str = Form(...),
+    block_id: str | None = Form(None),
+    attachment: UploadFile | None = File(None),
+) -> dict:
+    """One chat turn (multipart): optional targeted block + optional attached document.
+
+    Reply, apply any live block edits, append any new recommendations.
+    """
     result = await _load_result(run_id)
     state = await repository.get_studio_state(run_id)
     rewrite = PageRewrite.model_validate(state.rewrite) if state and state.rewrite else None
     history = state.chat_history if state else []
 
-    response = await chat_turn(result, rewrite, history, body.message)
+    attachment_text = None
+    attachment_note = ""
+    if attachment is not None:
+        data = await attachment.read()
+        doc = parse_document(attachment.filename or "attachment", data)
+        attachment_text = doc.text
+        attachment_note = f" [attached: {doc.filename}]"
 
-    await repository.append_chat(run_id, "user", body.message)
+    response = await chat_turn(
+        result, rewrite, history, message, block_id=block_id, attachment_text=attachment_text
+    )
+
+    await repository.append_chat(run_id, "user", message + attachment_note)
     await repository.append_chat(run_id, "assistant", response.reply)
 
     updated_rewrite = await repository.apply_block_edits(run_id, response.block_edits)
@@ -100,3 +120,19 @@ async def chat(run_id: str, body: ChatRequest) -> dict:
         "edited_block_ids": [e.block_id for e in response.block_edits],
         "new_recommendations": [s.model_dump(mode="json") for s in suggestions],
     }
+
+
+@router.post("/{run_id}/select-option")
+async def select_option(run_id: str, body: SelectOptionRequest) -> dict:
+    """Set which of a content block's 3 options is active, re-flag it, return the rewrite."""
+    state = await repository.get_studio_state(run_id)
+    flags = None
+    if state and state.rewrite:
+        rw = PageRewrite.model_validate(state.rewrite)
+        blk = next((b for b in rw.content_blocks if b.id == body.block_id), None)
+        if blk and blk.options and 0 <= body.index < len(blk.options):
+            flags = await flag_proposed_text(blk.options[body.index], rw.model_key)
+    rewrite = await repository.select_block_option(run_id, body.block_id, body.index, flags)
+    if rewrite is None:
+        raise HTTPException(status_code=404, detail="Rewrite or block not found")
+    return rewrite.model_dump(mode="json")

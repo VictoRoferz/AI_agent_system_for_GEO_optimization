@@ -119,7 +119,15 @@ def apply_edits_to_rewrite(rewrite: PageRewrite, edits: list[BlockEdit]) -> Page
     for edit in edits:
         block = by_id.get(edit.block_id)
         if block is not None:
-            block.proposed = edit.proposed
+            if edit.options:
+                block.options = edit.options
+            sel = edit.selected_index if edit.selected_index is not None else 0
+            block.selected_option_index = sel if block.options and 0 <= sel < len(block.options) else 0
+            block.proposed = (
+                block.options[block.selected_option_index] if block.options else edit.proposed
+            )
+            if edit.flags:
+                block.flags = edit.flags
             block.change_explanation = edit.change_explanation
             block.changed = _norm(block.proposed) != _norm(block.original)
         else:
@@ -128,7 +136,9 @@ def apply_edits_to_rewrite(rewrite: PageRewrite, edits: list[BlockEdit]) -> Page
                 kind="paragraph",
                 label=edit.label or "New block",
                 original="",
-                proposed=edit.proposed,
+                proposed=edit.options[0] if edit.options else edit.proposed,
+                options=edit.options,
+                flags=edit.flags,
                 changed=True,
                 is_technical=edit.is_technical,
                 change_explanation=edit.change_explanation,
@@ -139,6 +149,34 @@ def apply_edits_to_rewrite(rewrite: PageRewrite, edits: list[BlockEdit]) -> Page
             else:
                 rewrite.content_blocks.append(new_block)
     return rewrite
+
+
+async def select_block_option(
+    run_id: str, block_id: str, index: int, flags=None
+) -> PageRewrite | None:
+    """Set a content block's active option (proposed = options[index]); persist and return.
+
+    `flags` (if given) replaces the block's inline evidence flags for the new option.
+    """
+    async with async_session_maker() as session:
+        state = await session.get(StudioState, run_id)
+        if state is None or not state.rewrite:
+            return None
+        rewrite = PageRewrite.model_validate(state.rewrite)
+        for b in rewrite.content_blocks:
+            if b.id == block_id and b.options and 0 <= index < len(b.options):
+                b.selected_option_index = index
+                b.proposed = b.options[index]
+                if flags is not None:
+                    b.flags = flags
+                b.changed = _norm(b.proposed) != _norm(b.original)
+                break
+        else:
+            return rewrite
+        state.rewrite = rewrite.model_dump(mode="json")
+        state.updated_at = _utcnow()
+        await session.commit()
+        return rewrite
 
 
 async def apply_block_edits(run_id: str, edits: list[BlockEdit]) -> PageRewrite | None:

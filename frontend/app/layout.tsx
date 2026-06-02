@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "GEO Optimization Assistant",
-  description: "Generative Engine Optimization analysis & recommendations",
+  title: "Syte · GEO",
+  description: "Syte — Generative Engine Optimization analysis & recommendations",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -17,11 +18,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="no-print bg-navy-900 text-white">
           <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-3">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent font-bold">
-                G
+              <span className="inline-flex items-center rounded-md bg-white px-2 py-1 shadow-sm">
+                <Image
+                  src="/syte-logo.png"
+                  alt="Syte"
+                  width={72}
+                  height={30}
+                  priority
+                  className="h-6 w-auto"
+                />
               </span>
               <div>
-                <div className="font-semibold leading-tight">GEO Assistant</div>
+                <div className="font-semibold leading-tight">Syte · GEO</div>
                 <div className="text-xs text-slate-300">Generative Engine Optimization</div>
               </div>
             </Link>

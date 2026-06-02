@@ -132,7 +132,7 @@ async def synthesize(
         schema=LLMAnalysis,
         model_key=request.model_key,
         cache_prefix=kb_context or None,
-        max_tokens=8000,
+        max_tokens=10000,
     )
 
     engine_readiness = _merge_engine_readiness(llm.engine_readiness, mode_output.observed_engines)

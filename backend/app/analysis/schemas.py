@@ -55,6 +55,13 @@ class KBCoverageStatus(str, Enum):
     GAP = "gap"           # missing / not addressed by the page
 
 
+class ClaimFlag(str, Enum):
+    """Does this factual statement need a study/proof?"""
+    GREEN = "green"    # proven on page, or a universally-established fact — no proof needed
+    YELLOW = "yellow"  # plausible but unproven on the page — a citation is recommended
+    RED = "red"        # sensitive claim with no on-page evidence — proof required and missing
+
+
 # ------------------------------------------------------------------------- request
 class AnalysisRequest(BaseModel):
     url: str
@@ -166,6 +173,28 @@ class KBCoverageItem(BaseModel):
     related_rec_ids: list[str] = Field(default_factory=list)  # rec ids that close the gap
 
 
+class Claim(BaseModel):
+    """One factual statement extracted from the page, marked for whether it needs proof.
+
+    Surfaced as a 🟢/🟡/🔴 checklist (and overlaid on the studio) so a regulated-industry
+    reviewer can see which statements must be backed by a study/citation.
+    """
+    text: str                                     # the statement, quoted verbatim from the page
+    flag: ClaimFlag
+    claim_type: str                               # efficacy|safety|outcome|comparative|
+    #   mechanism_disease|indication|dosing|regulatory_status|statistic|company_brand|
+    #   economic_cost|testimonial|other
+    rationale: str                                # why this flag; what proof is missing & why it matters
+    required_evidence: list[str] = Field(default_factory=list)  # proof types needed (empty if green)
+    compliant_rewrite: str = ""                   # a compliant version (empty if already compliant)
+    anchor_id: str | None = None                  # data-geo-id of the page block this maps to
+
+
+class ClaimAnalysis(BaseModel):
+    """Structured output of the dedicated claim-extraction pass."""
+    claims: list[Claim] = Field(default_factory=list)
+
+
 class LLMAnalysis(BaseModel):
     """Full structured output requested from the brain (mode-agnostic)."""
     executive_summary: str
@@ -190,6 +219,8 @@ class AnalysisResult(BaseModel):
     alignment: AlignmentAssessment
     recommendations: list[Recommendation]
     kb_coverage: list[KBCoverageItem] = Field(default_factory=list)
+    claims: list[Claim] = Field(default_factory=list)
+    compliance_score: int = 0  # deterministic 0-100 evidence/compliance score from claim flags
     # context / metadata
     url: str
     queries: list[str]
@@ -208,13 +239,32 @@ class ProgressEvent(BaseModel):
 
 
 # --------------------------------------------------------------- AI Studio (rewrite)
+class ProposedFlag(BaseModel):
+    """An inline evidence flag on a span of the PROPOSED/recommended text.
+
+    `quote` is an exact substring of the proposed text (a statement, claim or number)
+    so the UI can highlight it; `flag` says whether it needs proof; `note` says what.
+    """
+    quote: str
+    flag: ClaimFlag
+    note: str = ""
+
+
+class ProposedFlagList(BaseModel):
+    """Structured output when (re)flagging a single proposed text."""
+    flags: list[ProposedFlag] = Field(default_factory=list)
+
+
 class RewriteBlock(BaseModel):
     """One unit of the proposed page rewrite (original -> proposed) shown in the studio."""
     id: str                                  # "blk-1"
     kind: str                                # "title"|"heading"|"paragraph"|"meta"|"jsonld"
     label: str                               # human label, e.g. "Title tag", "Intro paragraph"
     original: str = ""                       # original text/code ("" if net-new)
-    proposed: str = ""                       # rewritten text/code
+    proposed: str = ""                       # the ACTIVE rewrite (= options[selected_option_index])
+    options: list[str] = Field(default_factory=list)  # content: 3 distinct-style variants
+    selected_option_index: int = 0           # which option is active
+    flags: list[ProposedFlag] = Field(default_factory=list)  # inline evidence flags on `proposed`
     changed: bool = False                    # computed server-side (proposed != original)
     is_technical: bool = False               # content vs technical-change block
     change_explanation: str | None = None    # plain-language "why", for changed blocks
@@ -244,6 +294,9 @@ class BlockEdit(BaseModel):
     is_technical: bool = False               # used when creating a new block
     proposed: str
     change_explanation: str
+    options: list[str] = Field(default_factory=list)  # optional fresh 3 variants for the block
+    selected_index: int | None = None        # which option to activate (defaults to 0)
+    flags: list[ProposedFlag] = Field(default_factory=list)  # inline evidence flags on the new text
 
 
 class ChatResponse(BaseModel):

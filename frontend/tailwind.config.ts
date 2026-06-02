@@ -12,9 +12,10 @@ const config: Config = {
           800: "#162c49",
           900: "#0f2238",
         },
+        // Syte brand green (sampled from the logo).
         accent: {
-          DEFAULT: "#0f9b8e",
-          dark: "#0b7e73",
+          DEFAULT: "#356f4f",
+          dark: "#2a5a40",
         },
         priority: {
           p0: "#b91c1c",

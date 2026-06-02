@@ -15,6 +15,8 @@ from app.analysis.schemas import (
     ChatResponse,
     LLMRewrite,
     PageRewrite,
+    ProposedFlag,
+    ProposedFlagList,
     Recommendation,
     RewriteBlock,
 )
@@ -40,43 +42,100 @@ that in `change_explanation`.
 
 Return two sets of blocks:
   * content_blocks — the reader-facing copy: the title, key headings and the main \
-paragraphs. For each, quote the `original` verbatim (use "" if it is net-new), write the \
-concrete `proposed` rewrite (ready to publish, not a description), set is_technical=false, \
-and give a short plain-language `change_explanation` a non-technical user understands \
-(what changed and why it helps AI citation). If a block is unchanged, set proposed equal to \
-original and explain it was kept. \
+paragraphs. For EVERY content block, fill `options` with EXACTLY 3 distinct, ready-to-publish \
+rewrites, in this order: (1) most conservative / most-compliant (closest to the original, \
+safest claims), (2) balanced (clear GEO improvement, still careful), (3) concise & punchy but \
+still fully compliant. All three must obey the compliance rules above. Set `proposed` equal to \
+`options[0]`. Quote the `original` verbatim (use "" if it is net-new), set is_technical=false, \
+and give a short plain-language `change_explanation` (what changed across the options and why it \
+helps AI citation). \
+ALSO fill `flags` for option 1 (the `proposed` text): list EVERY factual statement, claim, or \
+NUMBER / STATISTIC / DATE in it that a reader could ask "is that proven?". For each, set \
+`quote` = the EXACT substring copied verbatim from `proposed`, `flag` ("red" = needs a study/ \
+citation and none is shown — efficacy/safety/superiority/comparative claims or unsourced \
+numbers; "yellow" = factual but should cite a source; "green" = established common-knowledge \
+fact, no proof needed), and `note` = what proof would substantiate it. Quotes MUST appear \
+verbatim in `proposed`; cover numbers, percentages and dates explicitly. \
 IMPORTANT: set `anchor_id` to the id of the matching page block from the "Page content \
 blocks" list below (e.g. "g7"), and copy that block's text into `original` verbatim. This \
 lets the UI highlight the exact element. Leave anchor_id null only for genuinely net-new \
 content that has no existing block.
   * technical_blocks — exact code changes: JSON-LD/schema, meta/link tags, canonical, etc. \
 For each, put any existing markup in `original` ("" if net-new), the EXACT code to ship in \
-`proposed`, set is_technical=true, set a clear `label` (e.g. "JSON-LD Article schema"), and \
-explain why it matters in `change_explanation`.
+`proposed`, set is_technical=true, leave `options` empty, set a clear `label` (e.g. "JSON-LD \
+Article schema"), and explain why it matters in `change_explanation`.
 
 Write a concise `summary` of the rewrite strategy. Use stable ids like "blk-1", "blk-2"."""
 
-_CHAT_SYSTEM = """You are the GEO Studio agent for one specific web page. You help the user \
-improve how likely AI search engines are to cite this page. You can:
-  * answer questions about the page, the recommendations, and GenAI/AI-search visibility, \
-grounded in the page signals and the knowledge base;
-  * when the user asks to change the proposed rewrite, return `block_edits` — each targets an \
-existing block by its `block_id` (see the current blocks below) or uses block_id="new" to add \
-one (then also set `label` and `is_technical`). Put the full new text/code in `proposed` and a \
-short plain-language `change_explanation`. Only edit what the user asked about;
-  * when the user asks for more or different recommendations, return them in \
-`new_recommendations`, each concrete (fill the `change` object: a content rewrite or an exact \
-technical code change with instructions), with impact_score, effort and confidence.
+_CHAT_SYSTEM = """You are the Syte GEO Studio agent. You ITERATE with the user on ONE web \
+page's PROPOSED rewrite. Your job is to actually CHANGE the proposed content when asked — not \
+just talk about it. You return structured output: `reply` (always, short), `block_edits` (when \
+you change content), and `new_recommendations` (only when explicitly asked for page-level ideas).
+
+THE GOLDEN RULE — when the user asks to change content, the new text MUST appear in \
+`block_edits`, NEVER only described in `reply`. A reply like "Here's a new recommendation: …" \
+with empty block_edits is WRONG and useless — the user sees no change. If they asked for a \
+change, `block_edits` must be non-empty.
+
+WHEN TO EDIT A BLOCK (return a `block_edits` entry):
+  * A "## Targeted block" id means the user is working on THAT block. If they ask to change it \
+in ANY way — "rewrite it", "another version", "a different option", "make another", "shorter", \
+"punchier", "more compliant", "use the attached document", "add X", "do it", "apply", "change \
+it" — you MUST return a `block_edits` entry for that block_id with the FULL new text in \
+`proposed` AND `options` = 3 fresh distinct compliant variants (conservative / balanced / \
+punchy), proposed = option 1, plus a one-line `change_explanation`. Keep `reply` to a short \
+confirmation ("Updated the intro — here are 3 new options."). ALSO set `flags` for the new \
+option-1 text: every factual statement / claim / number that needs proof, each with `quote` \
+(verbatim substring), `flag` (red/yellow/green) and `note` (what proof).
+  * If no targeted block is given but the user names/points at a block, edit it the same way \
+(find its block_id in the list).
+
+WHEN TO EXPLAIN (no block_edits): if the user asks WHY the content is recommended, what changed, \
+or any question — answer fully in `reply`, block_edits empty.
+
+WHEN TO ADD RECOMMENDATIONS: only if the user explicitly asks for new PAGE-LEVEL recommendations \
+(not editing this block) — return them in `new_recommendations`, each concrete (fill `change`).
+
+ATTACHED DOCUMENT — treat "## Attached document" as PRIMARY EVIDENCE the user provided (a study, \
+guideline, data, brief — any document). Embed its relevant findings into the new block text with \
+appropriate attribution, and reflect that in `block_edits`. Don't contradict it; flag conflicts \
+in `reply`.
 
 REGULATED-INDUSTRY COMPLIANCE — ALWAYS APPLY. Treat the page as regulated pharma / medtech / \
-biotech / healthcare content. Any copy or recommendation you propose must be compliant: no \
-unsubstantiated promotional language; no efficacy/safety/superiority/outcome claim without \
-citable study, clinical data or regulatory approval; avoid absolute/comparative claims and \
-off-label implications. If the user asks for non-compliant copy, propose a compliant \
-alternative and briefly explain why.
+biotech / healthcare content. Any copy you propose must be compliant: no unsubstantiated \
+promotional language; no efficacy/safety/superiority/outcome claim without citable study, \
+clinical data or regulatory approval; avoid absolute/comparative claims and off-label \
+implications. If the user asks for non-compliant copy, propose a compliant alternative and say \
+why in `reply`."""
 
-Always write a helpful `reply`. Leave `block_edits` and `new_recommendations` empty when the \
-user only asked a question."""
+
+_FLAG_SYSTEM = """You flag a single piece of PROPOSED web copy for a regulated pharma / medtech \
+/ healthcare page. List EVERY factual statement, claim, or NUMBER / STATISTIC / DATE in the text \
+that a reader could reasonably ask "is that proven?". For each, return `quote` = the EXACT \
+substring copied verbatim from the text, `flag` ("red" = needs a study/citation and none is \
+shown — efficacy/safety/superiority/comparative claims or unsourced numbers/percentages; \
+"yellow" = factual but should cite a source; "green" = established common-knowledge fact, no \
+proof needed), and `note` = the proof that would substantiate it (e.g. "peer-reviewed study", \
+"FDA approval", "cite the source"). Quotes MUST appear verbatim so the UI can highlight them. \
+Never invent sources or numbers. Skip purely promotional filler with no factual content."""
+
+
+async def flag_proposed_text(proposed: str, model_key: str | None) -> list[ProposedFlag]:
+    """(Re)flag a single proposed text: which statements/numbers need proof. Best-effort."""
+    if not (proposed or "").strip():
+        return []
+    try:
+        res = await complete_structured(
+            system=_FLAG_SYSTEM,
+            user=f"## Proposed text\n{proposed}",
+            schema=ProposedFlagList,
+            model_key=model_key,
+            max_tokens=1500,
+        )
+        # Keep only flags whose quote actually appears in the text (so they can highlight).
+        return [f for f in res.flags if f.quote and f.quote in proposed]
+    except Exception:
+        return []
 
 
 def _norm(text: str) -> str:
@@ -127,11 +186,21 @@ def _recs_block(recs: list[Recommendation]) -> str:
 
 
 def _finalize_blocks(blocks: list[RewriteBlock], start: int, technical: bool) -> int:
-    """Assign stable ids, force is_technical, and compute the changed flag. Returns next id."""
+    """Assign stable ids, force is_technical, normalize options, compute changed. Returns next id."""
     idx = start
     for b in blocks:
         b.id = f"blk-{idx}"
         b.is_technical = technical
+        if not technical:
+            # Content blocks carry 3 style options; keep proposed in sync with the active one.
+            if not b.options:
+                b.options = [b.proposed] if b.proposed else []
+            b.selected_option_index = 0
+            if b.options:
+                b.proposed = b.options[0]
+        else:
+            b.options = []
+            b.flags = []
         b.changed = _norm(b.proposed) != _norm(b.original)
         idx += 1
     return idx
@@ -177,13 +246,23 @@ async def chat_turn(
     rewrite: PageRewrite | None,
     history: list[dict],
     message: str,
+    block_id: str | None = None,
+    attachment_text: str | None = None,
 ) -> ChatResponse:
     convo = "\n".join(f"{m['role']}: {m['content']}" for m in history[-12:]) or "(start of conversation)"
     blocks = _rewrite_block_listing(rewrite) if rewrite else "(rewrite not generated yet)"
+    target = f"## Targeted block\n{block_id}\n\n" if block_id else ""
+    attachment = (
+        f"## Attached document (primary evidence the user provided)\n{attachment_text[:12000]}\n\n"
+        if attachment_text
+        else ""
+    )
     user = (
         f"{_signals_block(result)}\n\n"
         f"{_recs_block(result.recommendations)}\n\n"
         f"## Current proposed rewrite blocks (edit these by block_id)\n{blocks}\n\n"
+        f"{target}"
+        f"{attachment}"
         f"## Conversation so far\n{convo}\n\n"
         f"## New user message\n{message}"
     )

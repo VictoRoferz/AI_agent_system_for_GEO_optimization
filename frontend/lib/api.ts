@@ -59,6 +59,18 @@ export interface KBCoverageItem {
   related_rec_ids: string[];
 }
 
+export type ClaimFlag = "green" | "yellow" | "red";
+
+export interface Claim {
+  text: string;
+  flag: ClaimFlag;
+  claim_type: string;
+  rationale: string;
+  required_evidence: string[];
+  compliant_rewrite: string;
+  anchor_id?: string | null;
+}
+
 export interface PageSignals {
   final_url: string;
   title: string | null;
@@ -85,6 +97,8 @@ export interface AnalysisResult {
   alignment: Alignment;
   recommendations: Recommendation[];
   kb_coverage: KBCoverageItem[];
+  claims: Claim[];
+  compliance_score: number;
   url: string;
   queries: string[];
   mode: string;
@@ -195,12 +209,21 @@ export function engineLabel(key: string): string {
 }
 
 // ----------------------------------------------------------------- AI Studio
+export interface ProposedFlag {
+  quote: string;
+  flag: ClaimFlag;
+  note: string;
+}
+
 export interface RewriteBlock {
   id: string;
   kind: string;
   label: string;
   original: string;
   proposed: string;
+  options: string[];
+  selected_option_index: number;
+  flags: ProposedFlag[];
   changed: boolean;
   is_technical: boolean;
   change_explanation: string | null;
@@ -262,12 +285,29 @@ export async function generateRewrite(
   return r.json();
 }
 
-export async function sendChat(runId: string, message: string): Promise<ChatTurnResult> {
-  const r = await fetch(`${API_BASE}/api/runs/${runId}/chat`, {
+export async function sendChat(
+  runId: string,
+  opts: { message: string; blockId?: string | null; file?: File | null }
+): Promise<ChatTurnResult> {
+  const form = new FormData();
+  form.append("message", opts.message);
+  if (opts.blockId) form.append("block_id", opts.blockId);
+  if (opts.file) form.append("attachment", opts.file);
+  const r = await fetch(`${API_BASE}/api/runs/${runId}/chat`, { method: "POST", body: form });
+  if (!r.ok) throw new Error(`Chat failed (${r.status})`);
+  return r.json();
+}
+
+export async function selectOption(
+  runId: string,
+  blockId: string,
+  index: number
+): Promise<PageRewrite> {
+  const r = await fetch(`${API_BASE}/api/runs/${runId}/select-option`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ block_id: blockId, index }),
   });
-  if (!r.ok) throw new Error(`Chat failed (${r.status})`);
+  if (!r.ok) throw new Error(`Select option failed (${r.status})`);
   return r.json();
 }

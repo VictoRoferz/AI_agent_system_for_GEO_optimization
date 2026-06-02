@@ -2,7 +2,7 @@
 
 > A consolidated record of what we designed, built, decided, and verified for the
 > **Syte AI agent for Generative Engine Optimization (GEO)**.
-> Last updated: 2026-06-01.
+> Last updated: 2026-06-02. (See §14 for the latest: claim/evidence flagging, Studio v2, branding.)
 
 ---
 
@@ -296,3 +296,54 @@ All keys live in **gitignored** `backend/.env` (copy from `.env.example`):
 - Add the **pillar docs** to `Knowledge_base/`; add **Perplexity + SerpApi** keys for Live mode.
 - **OCR fallback** for scanned PDFs; a **"KB status" endpoint** to show loaded pillars in the UI.
 - Re-enable Claude: add Anthropic credits and set `DEFAULT_MODEL=claude-default`.
+
+---
+
+## 14. Claim & evidence flagging, Studio v2, and Syte branding (2026-06-02)
+
+### 14a. Claim & Evidence Check (report)
+A dedicated, page-only pass (`backend/app/analysis/claims.py`, run concurrently with synthesis in
+`orchestrator.py`) extracts every material factual statement and flags it **🟢/🟡/🔴** for whether
+it needs a study/proof, under a strict proof-required guardrail (never fabricate sources). Each
+`Claim` carries `flag`, `claim_type`, `rationale`, `required_evidence`, a `compliant_rewrite`, and
+an `anchor_id`. A deterministic **Evidence & Compliance score** (`compliance_score()`, weighted by
+flag × claim type) is shown as a **second `ScoreGauge`** beside the GEO score; the GEO score is
+unchanged and 🔴 claims still spawn P0 recommendations. Surfaced via `components/ClaimCheck.tsx`
+(counts + filter + per-claim cards) and overlaid 🟢/🟡/🔴 on the studio panes.
+
+### 14b. Studio v2 (optimize article)
+- **AI agent at the top** (`components/ChatAgent.tsx`): replaces the old "what changed" summary;
+  minimize ↔ normal ↔ expanded; **attach ANY document** (PDF/Word/txt — reuses
+  `doc_parser.parse_document`); `POST /api/runs/{id}/chat` is now multipart (`message`, `block_id`,
+  `attachment`). The chat **edits the proposed content live** — the prompt's "golden rule" forces
+  the new text into structured `block_edits` (never only described in the reply).
+- **3 rewrite options per content block** (distinct styles: conservative / balanced / punchy):
+  `RewriteBlock.options` + `selected_option_index`; `components/OptionTabs.tsx`; switching calls
+  `POST /api/runs/{id}/select-option`.
+- **Per-block "Ask Syte AI engine"** (`components/AskAiButton.tsx`): an inline `ChatAgent` scoped to
+  that block (attach a document, ask for alternatives, ask "why is this recommended?").
+- **Inline evidence flags ON the recommended text** — the core of the latest iteration:
+  `ProposedFlag {quote, flag, note}` + `RewriteBlock.flags`. The rewrite brain (and chat edits)
+  return inline flags for every statement / claim / **number** in the proposed text; switching an
+  option re-flags it via `flag_proposed_text()`. Rendered as colored inline `<mark>` highlights +
+  an explicit flag list in the per-block "Content rewrite" cards (`FlaggedText`/`FlagList` in the
+  studio page) **and** inside the right-hand **Proposed pane** of the diff view (`SnapshotFrame`
+  `appendFlagged`). A plain-language legend explains 🟢 proven / 🟡 add citation / 🔴 needs proof.
+
+### 14c. Syte branding & motion
+- Header uses the **Syte logo** (`frontend/public/syte-logo.png`) on a white chip + name
+  **"Syte · GEO"**; the app accent recolored from teal to the brand **forest green #356f4f**
+  (`tailwind.config.ts`; `SnapshotFrame` injected CSS). Diff "added" and claim 🟢 stay **emerald**
+  so semantics don't clash with brand chrome.
+- A dependency-free **"brain of moving points"** animation (`components/BrainPoints.tsx`, keyframes
+  in `globals.css`, honors `prefers-reduced-motion`) on the Ask-AI buttons, the optimize button,
+  and the agent "thinking" indicator.
+
+### 14d. Verification
+Backend: **33/33 tests** pass (added `test_compliance_score.py`, `test_rewrite_options.py`, plus the
+snapshot tagging tests). Frontend: `tsc --noEmit` clean. Verified live on `:3000`: claim report +
+compliance gauge; studio top agent with attach; 3 selectable options; per-block Ask-AI that actually
+rewrites; inline flags on the recommended text (cards + Proposed pane) that re-flag on option switch.
+
+> Run cmds unchanged (§10). Do **not** `next build` while `npm run dev` is running (corrupts the dev
+> cache). Use `npx tsc --noEmit` to type-check.
