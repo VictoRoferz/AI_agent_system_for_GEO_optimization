@@ -10,6 +10,8 @@ and/or new recommendations.
 """
 from __future__ import annotations
 
+import re
+
 from app.analysis.schemas import (
     AnalysisResult,
     ChatResponse,
@@ -56,10 +58,11 @@ citation and none is shown — efficacy/safety/superiority/comparative claims or
 numbers; "yellow" = factual but should cite a source; "green" = established common-knowledge \
 fact, no proof needed), and `note` = what proof would substantiate it. Quotes MUST appear \
 verbatim in `proposed`; cover numbers, percentages and dates explicitly. \
-IMPORTANT: set `anchor_id` to the id of the matching page block from the "Page content \
-blocks" list below (e.g. "g7"), and copy that block's text into `original` verbatim. This \
-lets the UI highlight the exact element. Leave anchor_id null only for genuinely net-new \
-content that has no existing block.
+REQUIRED: every content block that corresponds to existing page text MUST have a non-null \
+`anchor_id` chosen from the "Page content blocks" list below (e.g. "g7"), and you must copy \
+that block's text into `original` VERBATIM. Only a genuinely net-new block (no matching page \
+text) may have anchor_id = null. Do not leave anchor_id null for a block whose text exists on \
+the page — pick the closest matching id.
   * technical_blocks — exact code changes: JSON-LD/schema, meta/link tags, canonical, etc. \
 For each, put any existing markup in `original` ("" if net-new), the EXACT code to ship in \
 `proposed`, set is_technical=true, leave `options` empty, set a clear `label` (e.g. "JSON-LD \
@@ -185,6 +188,34 @@ def _recs_block(recs: list[Recommendation]) -> str:
     return "## Recommendations to apply\n" + "\n".join(lines)
 
 
+def _words(text: str) -> set[str]:
+    """Word tokens (length>3) for fuzzy matching — robust to punctuation/em-dashes."""
+    return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(w) > 3}
+
+
+def _resolve_anchors(blocks: list[RewriteBlock], text_blocks) -> None:
+    """Deterministically backfill missing `anchor_id`s by fuzzily matching each block's
+    `original` against the page's tagged text blocks (word overlap) — so the studio preview
+    reflects EVERY block, not only the ones the model happened to anchor."""
+    if not text_blocks:
+        return
+    tb = [(t.id, _words(t.text)) for t in text_blocks]
+    tb = [(tid, w) for tid, w in tb if w]
+    for blk in blocks:
+        if blk.anchor_id or not blk.original.strip():
+            continue
+        ow = _words(blk.original)
+        if len(ow) < 4:
+            continue
+        best_id, best_score = None, 0.0
+        for tid, tw in tb:
+            score = len(ow & tw) / max(1, min(len(ow), len(tw)))
+            if score > best_score:
+                best_id, best_score = tid, score
+        if best_id and best_score >= 0.5:  # half the shorter block's distinctive words overlap
+            blk.anchor_id = best_id
+
+
 def _finalize_blocks(blocks: list[RewriteBlock], start: int, technical: bool) -> int:
     """Assign stable ids, force is_technical, normalize options, compute changed. Returns next id."""
     idx = start
@@ -224,6 +255,9 @@ async def generate_rewrite(run_id: str, result: AnalysisResult) -> PageRewrite:
     )
     nxt = _finalize_blocks(llm.content_blocks, 1, technical=False)
     _finalize_blocks(llm.technical_blocks, nxt, technical=True)
+    _resolve_anchors(
+        llm.content_blocks, result.page_signals.text_blocks if result.page_signals else []
+    )
     return PageRewrite(
         run_id=run_id,
         summary=llm.summary,

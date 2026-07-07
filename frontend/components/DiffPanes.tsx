@@ -41,9 +41,9 @@ export default function DiffPanes({
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
-  // Push the claim-view mode into the (sandboxed) original frame.
+  // Push the claim-view mode into the (sandboxed) proposed frame — flags live there.
   useEffect(() => {
-    leftRef.current?.contentWindow?.postMessage({ geo: "claimview", mode: claimView }, "*");
+    rightRef.current?.contentWindow?.postMessage({ geo: "claimview", mode: claimView }, "*");
   }, [claimView, claims]);
 
   const counts = claims.reduce(
@@ -70,16 +70,12 @@ export default function DiffPanes({
         <h2 className="section-title">Original vs. proposed</h2>
         <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-wide text-slate-400">
           <span>
-            <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-yellow-300 align-middle" />
-            will change
-          </span>
-          <span>
-            <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-300 align-middle" />
-            proposed
+            <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500 align-middle" />
+            optimized
           </span>
           {hasClaims && (
             <span className="text-slate-400">
-              · claims&nbsp;
+              · evidence (right)&nbsp;
               <span className="text-rose-500">🔴 {counts.red || 0}</span>{" "}
               <span className="text-amber-500">🟡 {counts.yellow || 0}</span>{" "}
               <span className="text-emerald-500">🟢 {counts.green || 0}</span>
@@ -110,7 +106,7 @@ export default function DiffPanes({
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              Original page — ▸ preview a change · colored bar = claim flag
+              Original page — ▸ preview an optimization
             </span>
             <a href={url} target="_blank" className="text-[11px] text-accent hover:underline">
               open ↗
@@ -122,8 +118,8 @@ export default function DiffPanes({
         </div>
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-dark">
-              Proposed page — changes applied
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+              Proposed page — optimized + evidence flags
             </span>
           </div>
           <div className="h-[640px]">

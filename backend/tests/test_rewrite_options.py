@@ -1,6 +1,28 @@
-from app.analysis.rewrite import _finalize_blocks
-from app.analysis.schemas import BlockEdit, PageRewrite, RewriteBlock
+from app.analysis.rewrite import _finalize_blocks, _resolve_anchors
+from app.analysis.schemas import BlockEdit, PageRewrite, RewriteBlock, TextBlock
 from app.storage.repository import apply_edits_to_rewrite
+
+
+def test_resolve_anchors_backfills_missing_anchor():
+    tbs = [
+        TextBlock(id="g1", tag="li", text="Menu item home"),
+        TextBlock(id="g7", tag="p", text="Cochlear implants can restore binaural hearing for SSD patients."),
+    ]
+    matched = RewriteBlock(id="blk-1", kind="paragraph", label="Intro",
+                           original="Cochlear implants can restore binaural hearing for SSD patients.",
+                           proposed="x")
+    netnew = RewriteBlock(id="blk-2", kind="paragraph", label="New", original="", proposed="y")
+    _resolve_anchors([matched, netnew], tbs)
+    assert matched.anchor_id == "g7"   # backfilled by text match
+    assert netnew.anchor_id is None    # net-new stays unanchored
+
+
+def test_resolve_anchors_keeps_existing_anchor():
+    tbs = [TextBlock(id="g3", tag="p", text="Some page text here that is long enough")]
+    blk = RewriteBlock(id="blk-1", kind="paragraph", label="x", original="anything",
+                       proposed="z", anchor_id="g9")
+    _resolve_anchors([blk], tbs)
+    assert blk.anchor_id == "g9"  # not overwritten
 
 
 def test_finalize_sets_proposed_to_first_option_for_content():

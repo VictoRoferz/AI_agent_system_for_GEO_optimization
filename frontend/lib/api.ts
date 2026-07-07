@@ -1,7 +1,8 @@
 // API client + shared types mirroring the backend Pydantic schemas.
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8741";
+// Empty default → calls are same-origin ("/api/...") and go through the Next.js rewrite proxy
+// (see next.config.mjs) to the backend. Set NEXT_PUBLIC_API_BASE to override with an absolute URL.
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 export type SignalStatus = "observed" | "predicted";
 export type Priority = "P0" | "P1" | "P2" | "P3";

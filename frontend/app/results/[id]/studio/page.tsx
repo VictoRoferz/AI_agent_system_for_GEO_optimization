@@ -158,8 +158,8 @@ function ContentRow({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-navy-900">{block.label}</span>
           {block.changed ? (
-            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-dark">
-              changed
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+              optimized
             </span>
           ) : (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
@@ -187,11 +187,11 @@ function ContentRow({
         </div>
         <div
           className={`bg-white p-4 transition-colors duration-700 ${
-            block.changed ? "border-l-2 border-accent" : ""
-          } ${flash ? "bg-accent/10" : block.changed ? "bg-accent/[0.04]" : ""}`}
+            block.changed ? "border-l-2 border-blue-400" : ""
+          } ${flash ? "bg-blue-100" : block.changed ? "bg-blue-50" : ""}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-accent-dark">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">
               Proposed{block.changed ? " ✨" : ""}
             </div>
             <div className="flex items-center gap-2">
@@ -247,7 +247,7 @@ function ContentRow({
 // --- one technical (code) change block --------------------------------------
 function TechnicalRow({ block, flash }: { block: RewriteBlock; flash: boolean }) {
   return (
-    <div className={`card p-4 transition-colors duration-700 ${flash ? "ring-2 ring-accent" : ""}`}>
+    <div className={`card p-4 transition-colors duration-700 ${flash ? "ring-2 ring-blue-400" : ""}`}>
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-navy-900">{block.label}</span>
         <CopyButton text={block.proposed} className="border-slate-600 bg-navy-800 text-slate-200" />

@@ -71,3 +71,20 @@ cd backend && .venv/bin/python -m pytest -q
 ## Notes
 - MVP runs locally, no auth. Server-ready (CORS, async, SSE).
 - `backend/.env` is gitignored — never commit real keys.
+
+## Share it online (quick public link)
+
+Let people on other networks open the app via a free Cloudflare tunnel — no deploy, no account.
+
+```bash
+brew install cloudflared      # one time
+./share.sh                    # starts backend + frontend + tunnel
+```
+
+`share.sh` starts the backend (`127.0.0.1:8741`) and the frontend (`:3000`, which proxies `/api/*`
+to the backend so there's no CORS), then prints a public `https://<name>.trycloudflare.com` URL.
+Share that URL; keep the terminal open; press **Ctrl-C** to stop everything.
+
+Notes: the link lives only while `share.sh` runs on your Mac and the random name **changes each
+restart**; anyone with the link can use it (it spends LLM tokens) — your API keys stay server-side.
+For an always-on permanent URL, host it on Render/Railway instead.

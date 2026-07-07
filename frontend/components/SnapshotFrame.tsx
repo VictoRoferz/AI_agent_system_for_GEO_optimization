@@ -31,14 +31,14 @@ const OVERLAY_SELECTORS = [
 
 const STYLE = `
 html,body{overflow:auto!important;}
-.geo-change-orig{background:#fde047!important;border-radius:2px;box-shadow:0 0 0 2px #facc15;scroll-margin-top:60px;}
+.geo-change-orig{background:#dbeafe!important;border-radius:2px;box-shadow:0 0 0 2px #3b82f6;scroll-margin-top:60px;}
 .geo-change-orig.open{text-decoration:line-through;opacity:.55;}
-.geo-arrow{cursor:pointer;border:none;background:#356f4f;color:#fff;border-radius:4px;
+.geo-arrow{cursor:pointer;border:none;background:#2563eb;color:#fff;border-radius:4px;
   font-size:11px;line-height:1;margin:0 4px;padding:2px 6px;vertical-align:middle;
   text-decoration:none!important;opacity:1!important;display:inline-block;}
-.geo-arrow:hover{background:#2a5a40;}
-.geo-new{background:#bbf7d0!important;color:#065f46!important;border-radius:2px;padding:0 3px;
-  text-decoration:none!important;opacity:1!important;box-shadow:0 0 0 1px #34d399;}
+.geo-arrow:hover{background:#1d4ed8;}
+.geo-new{background:#dbeafe!important;color:#1e3a8a!important;border-radius:2px;padding:0 3px;
+  text-decoration:none!important;opacity:1!important;box-shadow:0 0 0 1px #3b82f6;}
 .geo-flag-red{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#dc2626!important;text-decoration-thickness:2px!important;background:#fecaca!important;border-radius:2px;}
 .geo-flag-yellow{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#d97706!important;text-decoration-thickness:2px!important;background:#fde68a!important;border-radius:2px;}
 .geo-flag-green{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#059669!important;text-decoration-thickness:2px!important;}
@@ -200,15 +200,15 @@ function buildDoc(
         arrow.title = "Show proposed change";
         const span = doc.createElement("span");
         span.className = "geo-new";
-        appendFlagged(doc, span, ch.proposed, ch.flags);
+        span.textContent = ch.proposed; // left pane: optimization preview only, no flags
         el.appendChild(arrow);
         el.appendChild(span);
       }
     }
   }
 
-  // Claim/evidence flags overlay (both panes): color the anchored blocks.
-  if (doc.body) {
+  // Claim/evidence flags overlay — ONLY on the proposed (right) pane.
+  if (mode === "proposed" && doc.body) {
     for (const c of claims) {
       if (!c.anchor_id) continue;
       const el = doc.querySelector(`[data-geo-id="${c.anchor_id}"]`);
@@ -227,10 +227,8 @@ function buildDoc(
     s.textContent = js;
     (doc.body || head).appendChild(s);
   };
-  if (mode === "original") {
-    inject(CONTROLLER);
-    inject(CLAIMVIEW);
-  }
+  if (mode === "original") inject(CONTROLLER); // ▸ reveal lives on the original pane
+  if (mode === "proposed") inject(CLAIMVIEW); // flag-view toggle now drives the proposed pane
   inject(SYNC);
 
   return "<!doctype html>" + doc.documentElement.outerHTML;

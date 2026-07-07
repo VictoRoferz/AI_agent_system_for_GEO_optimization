@@ -11,6 +11,16 @@ import {
 
 type Size = "min" | "normal" | "expanded";
 
+// Chat messages can carry the agent's structured result so it shows INLINE in the thread.
+type Msg = ChatMessage & { recs?: Recommendation[]; edited?: string[] };
+
+const PRIORITY_CLS: Record<string, string> = {
+  P0: "bg-rose-100 text-rose-700",
+  P1: "bg-orange-100 text-orange-700",
+  P2: "bg-amber-100 text-amber-700",
+  P3: "bg-emerald-100 text-emerald-700",
+};
+
 // The Syte AI agent panel. Reused page-wide (blockId=null) and per content block
 // (blockId set). Supports attach-any-document, and minimize/normal/expanded sizing.
 export default function ChatAgent({
@@ -36,7 +46,7 @@ export default function ChatAgent({
   onEditedBlocks?: (ids: string[]) => void;
   onNewRecommendations?: (recs: Recommendation[]) => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<Msg[]>(initialMessages);
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
@@ -64,7 +74,16 @@ export default function ChatAgent({
         blockId,
         file: attached,
       });
-      setMessages((m) => [...m, { role: "assistant", content: res.reply }]);
+      const edited = (res.edited_block_ids || []).filter((b) => b && b !== "new");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: res.reply,
+          recs: res.new_recommendations || [],
+          edited,
+        },
+      ]);
       if (res.rewrite) onRewrite?.(res.rewrite);
       if (res.edited_block_ids?.length) onEditedBlocks?.(res.edited_block_ids);
       if (res.new_recommendations?.length) onNewRecommendations?.(res.new_recommendations);
@@ -122,7 +141,10 @@ export default function ChatAgent({
               </p>
             )}
             {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                key={i}
+                className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
+              >
                 <div
                   className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
                     m.role === "user" ? "bg-navy-800 text-white" : "bg-slate-100 text-slate-800"
@@ -130,6 +152,45 @@ export default function ChatAgent({
                 >
                   {m.content}
                 </div>
+
+                {/* Inline confirmation when the agent edited the proposed text */}
+                {m.edited && m.edited.length > 0 && (
+                  <div className="mt-1 rounded-md bg-accent/10 px-2 py-1 text-[11px] text-accent-dark">
+                    ✓ Updated the recommended text ({m.edited.length} block
+                    {m.edited.length > 1 ? "s" : ""}) — see it above.
+                  </div>
+                )}
+
+                {/* Inline recommendation cards so results appear IN the chat */}
+                {m.recs && m.recs.length > 0 && (
+                  <div className="mt-1 w-full max-w-[85%] space-y-1.5">
+                    {m.recs.map((r, j) => (
+                      <div key={j} className="rounded-lg border border-slate-200 bg-white p-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              PRIORITY_CLS[r.priority] || "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {r.priority}
+                          </span>
+                          <span className="text-xs font-semibold text-navy-900">{r.title}</span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-slate-600">{r.description}</p>
+                        {r.change?.proposed_text && (
+                          <p className="mt-1 rounded bg-accent/5 p-1.5 text-[11px] text-navy-900">
+                            {r.change.proposed_text}
+                          </p>
+                        )}
+                        {r.change?.code_snippet && (
+                          <pre className="mt-1 overflow-x-auto rounded bg-navy-900 p-1.5 text-[10px] text-slate-100">
+                            <code>{r.change.code_snippet}</code>
+                          </pre>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {sending && (
