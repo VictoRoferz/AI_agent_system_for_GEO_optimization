@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { slugifyFactor } from "@/components/RationalePanel";
 import type { KBCoverageItem, KBCoverageStatus } from "@/lib/api";
 
 const STATUS_META: Record<
@@ -13,7 +15,13 @@ const STATUS_META: Record<
 
 const ORDER: Record<KBCoverageStatus, number> = { gap: 0, partial: 1, covered: 2 };
 
-export default function KBCoverage({ items }: { items: KBCoverageItem[] }) {
+export default function KBCoverage({
+  items,
+  runId,
+}: {
+  items: KBCoverageItem[];
+  runId?: string;
+}) {
   if (!items || items.length === 0) return null;
 
   const sorted = [...items].sort((a, b) => ORDER[a.status] - ORDER[b.status]);
@@ -45,7 +53,11 @@ export default function KBCoverage({ items }: { items: KBCoverageItem[] }) {
         {sorted.map((it, i) => {
           const meta = STATUS_META[it.status];
           return (
-            <div key={i} className="flex items-start gap-3 p-3">
+            <div
+              key={i}
+              id={`kb-${slugifyFactor(it.factor)}`}
+              className="flex scroll-mt-20 items-start gap-3 p-3"
+            >
               <span
                 className={`mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 text-xs font-bold ${meta.cls}`}
                 title={meta.label}
@@ -64,6 +76,17 @@ export default function KBCoverage({ items }: { items: KBCoverageItem[] }) {
                       {rid}
                     </a>
                   ))}
+                  {runId &&
+                    (it.related_block_ids ?? []).map((bid) => (
+                      <Link
+                        key={bid}
+                        href={`/results/${runId}/studio#block-${bid}`}
+                        className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] text-accent-dark hover:bg-accent/20"
+                        title="See the rewrite block addressing this factor"
+                      >
+                        {bid} ↗
+                      </Link>
+                    ))}
                 </div>
                 <p className="mt-0.5 text-sm text-slate-600">{it.assessment}</p>
               </div>

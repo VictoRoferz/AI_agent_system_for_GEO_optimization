@@ -14,11 +14,13 @@ export default function DiffPanes({
   changes,
   claims = [],
   url,
+  onWhy,
 }: {
   html: string;
   changes: Change[];
   claims?: Claim[];
   url: string;
+  onWhy?: (blockId: string) => void;
 }) {
   const leftRef = useRef<HTMLIFrameElement>(null);
   const rightRef = useRef<HTMLIFrameElement>(null);
@@ -26,12 +28,18 @@ export default function DiffPanes({
   const [claimView, setClaimView] = useState<ClaimView>("all");
   const syncRef = useRef(sync);
   syncRef.current = sync;
+  const onWhyRef = useRef(onWhy);
+  onWhyRef.current = onWhy;
 
   useEffect(() => {
     function onMsg(e: MessageEvent) {
-      if (!syncRef.current) return;
-      const d = e.data as { geo?: string; ratio?: number };
-      if (!d || d.geo !== "scroll") return;
+      const d = e.data as { geo?: string; ratio?: number; blockId?: string };
+      if (!d) return;
+      if (d.geo === "why" && d.blockId) {
+        onWhyRef.current?.(d.blockId);
+        return;
+      }
+      if (!syncRef.current || d.geo !== "scroll") return;
       let target: HTMLIFrameElement | null = null;
       if (e.source === leftRef.current?.contentWindow) target = rightRef.current;
       else if (e.source === rightRef.current?.contentWindow) target = leftRef.current;

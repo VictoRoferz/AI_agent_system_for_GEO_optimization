@@ -8,8 +8,9 @@ import {
   runAnalysis,
   type ModelOption,
   type Option,
-  type ProgressEvent,
 } from "@/lib/api";
+import { useAgentStream } from "@/lib/useAgentStream";
+import AgentTimeline from "@/components/AgentTimeline";
 
 export default function NewAnalysisPage() {
   const router = useRouter();
@@ -25,8 +26,9 @@ export default function NewAnalysisPage() {
   const [file, setFile] = useState<File | null>(null);
 
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<ProgressEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [autoOptimize, setAutoOptimize] = useState(false);
+  const [optimizeDepth, setOptimizeDepth] = useState<"quick" | "full">("quick");
+  const stream = useAgentStream();
 
   useEffect(() => {
     getOptions().then((o) => {
@@ -50,9 +52,9 @@ export default function NewAnalysisPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setRunning(true);
-    setProgress({ step: "start", message: "Starting…", pct: 2 });
+    stream.begin();
+    stream.ingestProgress({ step: "start", message: "Starting…", pct: 2 });
 
     const form = new FormData();
     form.append("url", url);
@@ -64,15 +66,23 @@ export default function NewAnalysisPage() {
 
     try {
       await runAnalysis(form, {
-        onProgress: setProgress,
-        onResult: (r) => router.push(`/results/${r.run_id}`),
+        onProgress: stream.ingestProgress,
+        onAgentEvent: stream.ingest,
+        onResult: (r) => {
+          stream.finish();
+          router.push(
+            autoOptimize
+              ? `/results/${r.run_id}/studio?optimize=1&depth=${optimizeDepth}`
+              : `/results/${r.run_id}`
+          );
+        },
         onError: (msg) => {
-          setError(msg);
+          stream.finish(msg);
           setRunning(false);
         },
       });
     } catch (err) {
-      setError(String(err));
+      stream.finish(String(err));
       setRunning(false);
     }
   }
@@ -203,22 +213,48 @@ export default function NewAnalysisPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {running && progress && (
-          <div className="space-y-2">
-            <div className="h-2 w-full rounded-full bg-slate-200">
-              <div
-                className="h-2 rounded-full bg-accent transition-all"
-                style={{ width: `${progress.pct}%` }}
-              />
+        {/* Continue straight into the optimization agent after the analysis */}
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={autoOptimize}
+              onChange={(e) => setAutoOptimize(e.target.checked)}
+              className="h-4 w-4 accent-[#356f4f]"
+            />
+            Continue into optimization (the agent rewrites the whole page after the analysis)
+          </label>
+          {autoOptimize && (
+            <div className="flex gap-1.5">
+              {(["quick", "full"] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setOptimizeDepth(d)}
+                  className={`rounded-full border px-3 py-1 text-xs ${
+                    optimizeDepth === d
+                      ? "border-accent bg-accent text-white"
+                      : "border-slate-300 text-slate-600 hover:border-slate-400"
+                  }`}
+                >
+                  {d === "quick" ? "Quick pass" : "Full depth"}
+                </button>
+              ))}
             </div>
-            <p className="text-sm text-slate-500">{progress.message}</p>
-          </div>
+          )}
+        </div>
+
+        {stream.status !== "idle" && (
+          <AgentTimeline
+            phases={stream.phases}
+            status={stream.status}
+            error={stream.error}
+            progressPct={stream.progress?.pct ?? null}
+            startedAt={stream.startedAt}
+            finishedAt={stream.finishedAt}
+            title="Agent activity"
+            maxHeightClass="max-h-72"
+          />
         )}
 
         <button

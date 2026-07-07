@@ -47,6 +47,8 @@ async def get_run(run_id: str) -> dict:
             **result,
             "page_signals": {k: v for k, v in signals.items() if k != "snapshot_html"},
         }
+    state = await repository.get_studio_state(run_id)
+    agent_run = await repository.get_agent_run(run_id)
     return {
         "id": run.id,
         "created_at": run.created_at.isoformat(),
@@ -59,6 +61,8 @@ async def get_run(run_id: str) -> dict:
         "goals_filename": run.goals_filename,
         "result": result,
         "error": run.error,
+        "has_rewrite": bool(state and state.rewrite),
+        "has_optimization": bool(agent_run and agent_run.status == "completed"),
     }
 
 

@@ -21,14 +21,11 @@ from app.analysis.schemas import (
     ProgressEvent,
     TargetEngine,
 )
+from app.api.sse import sse as _sse
 from app.ingestion.doc_parser import parse_document
 from app.storage import repository
 
 router = APIRouter(prefix="/api", tags=["analyze"])
-
-
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 def _parse_list(value: str | None) -> list[str]:

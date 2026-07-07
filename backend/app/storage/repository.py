@@ -17,7 +17,7 @@ from app.analysis.schemas import (
     RewriteBlock,
 )
 from app.storage.db import async_session_maker
-from app.storage.models import ContentCache, Run, StudioState
+from app.storage.models import AgentRun, AgentTrace, ContentCache, KBFactorCache, Run, StudioState
 
 
 async def save_run(
@@ -209,3 +209,80 @@ async def add_recommendations(run_id: str, findings: list[LLMFinding]) -> list[R
 
 def _norm(text: str) -> str:
     return " ".join((text or "").split())
+
+
+# ---------------------------------------------------------------- agent (optimize)
+async def get_factor_set(kb_hash: str):
+    """Cached canonical KB factor set for this KB content hash, if any."""
+    from app.agent.schemas import KBFactorSet  # local import to avoid cycles
+
+    async with async_session_maker() as session:
+        row = await session.get(KBFactorCache, kb_hash)
+        return KBFactorSet.model_validate(row.payload) if row and row.payload else None
+
+
+async def save_factor_set(fs) -> None:
+    async with async_session_maker() as session:
+        await session.merge(
+            KBFactorCache(
+                kb_hash=fs.kb_hash,
+                model_key=fs.model_key,
+                payload=fs.model_dump(mode="json"),
+            )
+        )
+        await session.commit()
+
+
+async def get_agent_run(run_id: str) -> AgentRun | None:
+    async with async_session_maker() as session:
+        return await session.get(AgentRun, run_id)
+
+
+async def save_agent_run(
+    run_id: str,
+    status: str,
+    depth: str,
+    model_key: str,
+    result: dict | None = None,
+    error: str | None = None,
+) -> None:
+    async with async_session_maker() as session:
+        existing = await session.get(AgentRun, run_id)
+        row = existing or AgentRun(run_id=run_id)
+        row.status = status
+        row.depth = depth
+        row.model_key = model_key
+        row.result = result
+        row.error = error
+        row.updated_at = _utcnow()
+        await session.merge(row)
+        await session.commit()
+
+
+async def get_agent_trace(run_id: str) -> AgentTrace | None:
+    async with async_session_maker() as session:
+        return await session.get(AgentTrace, run_id)
+
+
+async def upsert_agent_trace(
+    run_id: str,
+    *,
+    status: str,
+    depth: str,
+    model_key: str,
+    steps: list[dict],
+    summary: dict | None = None,
+) -> None:
+    """Upserted on each step transition so the trace is readable MID-RUN."""
+    async with async_session_maker() as session:
+        existing = await session.get(AgentTrace, run_id)
+        row = existing or AgentTrace(run_id=run_id)
+        row.status = status
+        row.depth = depth
+        row.model_key = model_key
+        row.steps = steps
+        if summary is not None:
+            row.summary = summary
+        row.updated_at = _utcnow()
+        await session.merge(row)
+        await session.commit()

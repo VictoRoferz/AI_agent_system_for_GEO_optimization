@@ -26,6 +26,33 @@ assessment, and prioritized recommendations (each with *why it matters*, *expect
    SerpApi for AI Overviews). *Observed* evidence.
 4. **Peec AI data** — pull real tracked visibility/citation metrics from Peec AI.
 
+## The optimization agent
+
+After (or straight from) an analysis, a **multi-phase autonomous agent** does the whole
+optimization work — watch it live in an activity timeline, with every change explained:
+
+- **Plan** — a Senior GEO Strategist decides per-block actions and a style brief.
+- **Audit** — an **expert panel** (Technical GEO Engineer, Content & Answerability Strategist,
+  Evidence & Compliance Officer, Brand & Entity Visibility Expert) checks the page against a
+  **canonical factor list** extracted once from your KB (cached per KB content hash).
+- **Rewrite** — every content block (batched), plus technical changes (JSON-LD, meta,
+  canonical) and net-new sections at full depth; every change carries a structured
+  **rationale** (KB factors, verbatim page evidence, targeted queries, expected effect).
+- **Verify** — deterministic checks (no invented numbers, compliance lexicon, coverage) plus
+  LLM lenses (Domain Fidelity Guardian, Compliance Officer), one revision loop, and an LLM
+  Retrieval Expert judging **before → after citation-readiness** per engine (predicted).
+- **Export** — a deployable optimized HTML page (`/export-page`) and a markdown
+  **change package** (`/change-package`) with every change + why + verification status.
+
+Depths: **quick** (~8-12 LLM calls, 1 option per block — for cheap testing, the default) and
+**full** (~18-22 calls, 3 options per block + verification loop). Trigger from the studio
+("Start optimization"), the report CTA, or the form's "Continue into optimization" toggle;
+`POST /api/runs/{id}/optimize?depth=quick|full` via curl. Runs are resumable after a page
+reload (the step trace is persisted mid-run) and idempotent (re-POST replays instantly).
+
+> Cost note: the agent fans out many calls sharing one KB+factor prefix — on Claude this
+> prefix is cached (`cache_control`), making runs markedly cheaper than on GPT.
+
 ## Project layout
 
 ```

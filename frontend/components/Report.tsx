@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import {
   API_BASE,
   engineLabel,
@@ -9,11 +11,13 @@ import {
   type EngineReadiness,
   type Recommendation,
 } from "@/lib/api";
+import { EXPERT_META } from "./AgentTimeline";
 import BrainPoints from "./BrainPoints";
 import ClaimCheck from "./ClaimCheck";
 import CopyButton from "./CopyButton";
 import KBCoverage from "./KBCoverage";
 import PriorityMatrix from "./PriorityMatrix";
+import RationalePanel from "./RationalePanel";
 import ScoreGauge from "./ScoreGauge";
 
 export function ChangeView({ change }: { change: ConcreteChange }) {
@@ -96,7 +100,8 @@ function EngineCard({ er }: { er: EngineReadiness }) {
   );
 }
 
-function ActionCard({ rec }: { rec: Recommendation }) {
+function ActionCard({ rec, runId }: { rec: Recommendation; runId?: string }) {
+  const [why, setWhy] = useState(false);
   return (
     <div id={rec.id} className="card scroll-mt-20 p-5">
       <div className="flex items-start gap-3">
@@ -110,11 +115,21 @@ function ActionCard({ rec }: { rec: Recommendation }) {
             <h4 className="font-semibold text-navy-900">
               {rec.priority_rank}. {rec.title}
             </h4>
-            {rec.target_engine && (
-              <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[10px] text-navy-700">
-                {engineLabel(rec.target_engine)}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {rec.source_agent && EXPERT_META[rec.source_agent] && (
+                <span
+                  className="rounded-full bg-navy-50 px-2 py-0.5 text-[10px] text-navy-700"
+                  title="The expert agent that found this"
+                >
+                  {EXPERT_META[rec.source_agent]}
+                </span>
+              )}
+              {rec.target_engine && (
+                <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[10px] text-navy-700">
+                  {engineLabel(rec.target_engine)}
+                </span>
+              )}
+            </div>
           </div>
           <p className="mt-1 text-sm text-slate-600">{rec.description}</p>
 
@@ -137,6 +152,37 @@ function ActionCard({ rec }: { rec: Recommendation }) {
 
           {rec.change && <ChangeView change={rec.change} />}
 
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            {rec.rationale && (
+              <button
+                type="button"
+                onClick={() => setWhy((v) => !v)}
+                className="text-[11px] font-medium text-accent-dark hover:underline"
+              >
+                {why ? "Hide rationale" : "Why this recommendation?"}
+              </button>
+            )}
+            {runId &&
+              (rec.block_ids ?? []).slice(0, 1).map((bid) => (
+                <Link
+                  key={bid}
+                  href={`/results/${runId}/studio#block-${bid}`}
+                  className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent-dark hover:bg-accent/20"
+                >
+                  View in optimized page →
+                </Link>
+              ))}
+          </div>
+          {why && rec.rationale && runId && (
+            <div className="mt-2">
+              <RationalePanel
+                rationale={rec.rationale}
+                sourceAgent={rec.source_agent}
+                runId={runId}
+              />
+            </div>
+          )}
+
           {rec.evidence.length > 0 && (
             <details className="mt-2 text-xs text-slate-500">
               <summary className="cursor-pointer">Evidence</summary>
@@ -153,7 +199,15 @@ function ActionCard({ rec }: { rec: Recommendation }) {
   );
 }
 
-export default function Report({ result, runId }: { result: AnalysisResult; runId: string }) {
+export default function Report({
+  result,
+  runId,
+  hasRewrite = false,
+}: {
+  result: AnalysisResult;
+  runId: string;
+  hasRewrite?: boolean;
+}) {
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -179,6 +233,15 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
             <BrainPoints size={18} color="#ffffff" />
             Syte AI agent: optimize article
           </a>
+          {hasRewrite && (
+            <a
+              href={`${API_BASE}/api/runs/${runId}/export-page?deployable=true`}
+              download
+              className="rounded-lg border border-accent px-4 py-2 text-sm text-accent-dark hover:bg-accent/5"
+            >
+              ⬇ Optimized page (HTML)
+            </a>
+          )}
           <a
             href={`${API_BASE}/api/runs/${runId}/export?format=md`}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:border-slate-400"
@@ -267,13 +330,13 @@ export default function Report({ result, runId }: { result: AnalysisResult; runI
         </h2>
         <div className="space-y-3">
           {result.recommendations.map((rec) => (
-            <ActionCard key={rec.id} rec={rec} />
+            <ActionCard key={rec.id} rec={rec} runId={runId} />
           ))}
         </div>
       </div>
 
       {/* Knowledge-base coverage checklist */}
-      <KBCoverage items={result.kb_coverage || []} />
+      <KBCoverage items={result.kb_coverage || []} runId={runId} />
 
       {/* Claim & evidence check (does each fact need a study/proof?) */}
       <ClaimCheck items={result.claims || []} />

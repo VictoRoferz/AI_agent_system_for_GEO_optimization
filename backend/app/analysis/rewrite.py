@@ -23,24 +23,17 @@ from app.analysis.schemas import (
     RewriteBlock,
 )
 from app.core.llm import complete_structured
+from app.core.prompt_blocks import COMPLIANCE_BLOCK_REWRITE
 from app.ingestion.kb_loader import load_kb_context
 
-_REWRITE_SYSTEM = """You are a senior GEO (Generative Engine Optimization) content engineer. \
+_REWRITE_SYSTEM = f"""You are a senior GEO (Generative Engine Optimization) content engineer. \
 You are given a web page's current content and signals plus a prioritized set of \
 recommendations. Produce a COMPLETE proposed rewrite of the page that applies those \
 recommendations so AI search engines (ChatGPT, Google AI Overviews, Perplexity, Gemini) are \
 far more likely to CITE it — while preserving the page's real meaning, facts and intent. \
 Never invent facts that aren't supported by the original page.
 
-REGULATED-INDUSTRY COMPLIANCE — ALWAYS APPLY. Treat the page as regulated pharma / medtech / \
-biotech / healthcare content. Every word you propose must be compliant: no unsubstantiated \
-promotional or marketing language; every efficacy, safety, superiority or outcome claim must \
-be backed by a citable study, clinical data or regulatory approval present on the page — if \
-the evidence is not there, do NOT assert the claim (state it factually, add a citation \
-placeholder, or soften it). Avoid absolute/comparative claims ("best", "cure", "guaranteed", \
-"#1", "superior to X") without head-to-head evidence, and avoid off-label implications. If the \
-original text contains a non-compliant claim, rewrite it into a compliant version and explain \
-that in `change_explanation`.
+{COMPLIANCE_BLOCK_REWRITE}
 
 Return two sets of blocks:
   * content_blocks — the reader-facing copy: the title, key headings and the main \

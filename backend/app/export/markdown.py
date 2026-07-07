@@ -50,6 +50,35 @@ def render_markdown(result: AnalysisResult) -> str:
         ]
         if rec.evidence:
             lines.append("- **Evidence:** " + "; ".join(rec.evidence))
+        ch = rec.change
+        if ch is not None:
+            if ch.proposed_text:
+                lines.append(f"- **Proposed copy ({ch.target}):** {ch.proposed_text}")
+            if ch.code_snippet:
+                lines += [f"- **Code to apply ({ch.target}):**", "", "```", ch.code_snippet, "```"]
+        lines.append("")
+
+    if result.kb_coverage:
+        lines += [
+            "## Knowledge-base coverage",
+            "",
+            "| Factor | Status | Assessment |",
+            "| --- | --- | --- |",
+        ]
+        for item in result.kb_coverage:
+            lines.append(f"| {item.factor} | {item.status.value} | {item.assessment} |")
+        lines.append("")
+
+    if result.claims:
+        lines += [
+            f"## Claim & evidence check (compliance score {result.compliance_score}/100)",
+            "",
+            "| Flag | Claim | Type | Needs |",
+            "| --- | --- | --- | --- |",
+        ]
+        for c in result.claims:
+            needs = "; ".join(c.required_evidence) or "—"
+            lines.append(f"| {c.flag.value} | {c.text} | {c.claim_type} | {needs} |")
         lines.append("")
 
     if result.notes:

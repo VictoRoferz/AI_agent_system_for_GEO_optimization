@@ -7,6 +7,7 @@ export interface Change {
   original: string;
   proposed: string;
   anchorId?: string | null;
+  blockId?: string; // rewrite block id — enables the "?" why click-through
   flags?: { quote: string; flag: "green" | "yellow" | "red"; note?: string }[];
 }
 
@@ -39,6 +40,10 @@ html,body{overflow:auto!important;}
 .geo-arrow:hover{background:#1d4ed8;}
 .geo-new{background:#dbeafe!important;color:#1e3a8a!important;border-radius:2px;padding:0 3px;
   text-decoration:none!important;opacity:1!important;box-shadow:0 0 0 1px #3b82f6;}
+.geo-why-btn{cursor:pointer;border:none;background:#356f4f;color:#fff;border-radius:50%;
+  font-size:10px;line-height:1;margin:0 4px;padding:3px 6px;vertical-align:middle;
+  text-decoration:none!important;opacity:1!important;display:inline-block;}
+.geo-why-btn:hover{background:#2a5a40;}
 .geo-flag-red{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#dc2626!important;text-decoration-thickness:2px!important;background:#fecaca!important;border-radius:2px;}
 .geo-flag-yellow{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#d97706!important;text-decoration-thickness:2px!important;background:#fde68a!important;border-radius:2px;}
 .geo-flag-green{text-decoration:underline!important;text-decoration-style:dotted!important;text-decoration-color:#059669!important;text-decoration-thickness:2px!important;}
@@ -62,6 +67,18 @@ document.addEventListener('click', function (e) {
   e.preventDefault();
   var w = b.closest('.geo-change-orig');
   if (w) w.classList.toggle('open');
+});
+`;
+
+// Why controller (both frames): the "?" button reports its block id to the parent,
+// which scrolls to that block's card and opens its rationale.
+const WHY = `
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('.geo-why-btn');
+  if (!b) return;
+  e.preventDefault();
+  var w = b.closest('[data-geo-why]');
+  if (w) parent.postMessage({ geo: 'why', blockId: w.getAttribute('data-geo-why') }, '*');
 });
 `;
 
@@ -183,6 +200,16 @@ function buildDoc(
       const el = findElement(doc, ch, used);
       if (!el) continue;
       used.add(el);
+      if (ch.blockId) el.setAttribute("data-geo-why", ch.blockId);
+
+      const whyBtn = () => {
+        const b = doc.createElement("button");
+        b.type = "button";
+        b.className = "geo-why-btn";
+        b.textContent = "?";
+        b.title = "Why this change? — open the explanation";
+        return b;
+      };
 
       if (mode === "proposed") {
         // Replace content with the proposed text; underline flagged statements/numbers inline.
@@ -191,6 +218,7 @@ function buildDoc(
         span.className = "geo-new";
         appendFlagged(doc, span, ch.proposed, ch.flags);
         el.appendChild(span);
+        if (ch.blockId) el.appendChild(whyBtn());
       } else {
         el.classList.add("geo-change-orig");
         const arrow = doc.createElement("button");
@@ -203,6 +231,7 @@ function buildDoc(
         span.textContent = ch.proposed; // left pane: optimization preview only, no flags
         el.appendChild(arrow);
         el.appendChild(span);
+        if (ch.blockId) el.appendChild(whyBtn());
       }
     }
   }
@@ -229,6 +258,7 @@ function buildDoc(
   };
   if (mode === "original") inject(CONTROLLER); // ▸ reveal lives on the original pane
   if (mode === "proposed") inject(CLAIMVIEW); // flag-view toggle now drives the proposed pane
+  inject(WHY);
   inject(SYNC);
 
   return "<!doctype html>" + doc.documentElement.outerHTML;
@@ -241,7 +271,9 @@ const SnapshotFrame = forwardRef<
   const [srcDoc, setSrcDoc] = useState<string | null>(null);
   const key = useMemo(
     () =>
-      changes.map((c) => (c.anchorId || "") + c.original + "→" + c.proposed).join("|") +
+      changes
+        .map((c) => (c.blockId || "") + (c.anchorId || "") + c.original + "→" + c.proposed)
+        .join("|") +
       "::" +
       claims.map((c) => (c.anchor_id || "") + c.flag).join("|"),
     [changes, claims]

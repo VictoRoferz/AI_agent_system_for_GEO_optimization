@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # --------------------------------------------------------------------------- enums
@@ -132,6 +132,49 @@ class ConcreteChange(BaseModel):
     instructions: list[str] = Field(default_factory=list)  # step-by-step apply guide
 
 
+# ------------------------------------------------------- explainability (agent)
+class EvidenceRef(BaseModel):
+    """A verbatim quote that grounds a finding or a rewrite decision."""
+    quote: str
+    anchor_id: str | None = None  # data-geo-id of the page block the quote comes from
+    source: str = "page"          # page | claim | signal | kb
+
+
+class Rationale(BaseModel):
+    """Structured 'why this change, in this form' attached to findings and rewrite blocks."""
+    why: str = ""
+    kb_factor_ids: list[str] = Field(default_factory=list)    # canonical factor ids ("f-3")
+    kb_factor_names: list[str] = Field(default_factory=list)  # resolved names (== KBCoverageItem.factor)
+    evidence: list[EvidenceRef] = Field(default_factory=list)
+    queries_targeted: list[str] = Field(default_factory=list)
+    expected_effect: str = ""                                 # mechanism -> outcome, one sentence
+    recommendation_ids: list[str] = Field(default_factory=list)  # rec-N this implements
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v):
+        # Models sometimes emit bare quote strings; accept them as EvidenceRef quotes.
+        if isinstance(v, list):
+            return [{"quote": item} if isinstance(item, str) else item for item in v]
+        return v
+
+
+class VerificationIssue(BaseModel):
+    """One problem found while verifying a proposed change."""
+    kind: str  # unsupported_claim|compliance|meaning_drift|broken_promise|new_number|
+    #   rec_unimplemented|compliance_lexicon|flag_quote|missing_rationale
+    detail: str
+    quote: str = ""              # verbatim substring of the proposed text, where applicable
+    block_id: str | None = None
+
+
+class VerificationOutcome(BaseModel):
+    """Self-verification result stamped on a rewrite block by the agent."""
+    status: str = "unverified"   # unverified | passed | revised | needs_human
+    issues: list[VerificationIssue] = Field(default_factory=list)
+    notes: str = ""
+
+
 class LLMFinding(BaseModel):
     """A single recommendation as produced by the brain."""
     title: str
@@ -144,6 +187,8 @@ class LLMFinding(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     target_engine: TargetEngine | None = None
     change: ConcreteChange | None = None  # the concrete fix (rewrite or code change)
+    rationale: Rationale | None = None    # structured why (agent path; None on legacy runs)
+    source_agent: str | None = None       # expert id that produced this finding (agent path)
 
 
 class EngineReadiness(BaseModel):
@@ -171,6 +216,8 @@ class KBCoverageItem(BaseModel):
     status: KBCoverageStatus
     assessment: str                               # one line: how the page does on this factor
     related_rec_ids: list[str] = Field(default_factory=list)  # rec ids that close the gap
+    factor_id: str | None = None                  # canonical factor id (agent path)
+    related_block_ids: list[str] = Field(default_factory=list)  # rewrite blocks addressing it
 
 
 class Claim(BaseModel):
@@ -210,6 +257,7 @@ class Recommendation(LLMFinding):
     id: str
     priority: Priority
     priority_rank: int  # global ordering, 1 = most important
+    block_ids: list[str] = Field(default_factory=list)  # rewrite blocks implementing it (agent path)
 
 
 class AnalysisResult(BaseModel):
@@ -269,6 +317,8 @@ class RewriteBlock(BaseModel):
     is_technical: bool = False               # content vs technical-change block
     change_explanation: str | None = None    # plain-language "why", for changed blocks
     anchor_id: str | None = None             # data-geo-id of the page block this maps to
+    rationale: Rationale | None = None       # structured why (agent path)
+    verification: VerificationOutcome | None = None  # self-verification stamp (agent path)
 
 
 class LLMRewrite(BaseModel):
@@ -285,6 +335,7 @@ class PageRewrite(BaseModel):
     content_blocks: list[RewriteBlock] = Field(default_factory=list)
     technical_blocks: list[RewriteBlock] = Field(default_factory=list)
     model_key: str
+    origin: str = "studio"  # "studio" (manual generate) | "agent" (optimization run)
 
 
 class BlockEdit(BaseModel):

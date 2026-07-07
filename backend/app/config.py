@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     enable_playwright: bool = True
 
+    # Optimization agent
+    agent_default_depth: str = "quick"  # quick | full
+    agent_max_concurrency: int = 4
+
     @property
     def kb_path(self) -> Path:
         p = Path(self.knowledge_base_dir)
